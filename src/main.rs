@@ -121,6 +121,7 @@ enum Instruction {
     LdiHLA,
     LddHLA,
     Push(Reg16),
+    Pop(Reg16),
     Xor(Reg8),
     Cpl,
     Inc8(Reg8),
@@ -164,7 +165,8 @@ impl Instruction {
             LdhA8A(..) => 3,
             LdiAHL => 2,
             LddAHL => 2,
-            Push(..) => 3,
+            Push(..) => 4,
+            Pop(..) => 3,
             Xor(..) => 1,
             Cpl => 1,
             Inc8(..) => 1,
@@ -260,8 +262,9 @@ impl Cpu {
             [0x22, ..] => (LdiHLA, 1),
             [0x32, ..] => (LddHLA, 1),
 
-            // 16-bit push
+            // 16-bit push/pop
             [op, ..] if op & 0xcf == 0xc5 => (Push(Reg16::from_bits(op >> 4)), 1),
+            [op, ..] if op & 0xcf == 0xc1 => (Pop(Reg16::from_bits(op >> 4)), 1),
 
             // Xor
             [op, ..] if op & 0xf8 == 0xa8 => match Reg8::from_bits(op) {
@@ -383,6 +386,14 @@ impl Cpu {
                 // Write the value onto the stack
                 let sp = sp as usize;
                 memory[sp..sp + 2].copy_from_slice(&self.regs.read_16(reg).to_le_bytes());
+            }
+            Pop(reg) => {
+                // Increment the stack pointer
+                let sp = self.regs.read_16(Reg16::SP);
+                self.regs.write_16(Reg16::SP, sp.wrapping_add(2));
+                // Write the value into the register
+                let sp = sp as usize;
+                self.regs.write_16(reg, u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap()));
             }
             Xor(reg) => {
                 let mut a = self.regs.read_8(Reg8::A);
