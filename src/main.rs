@@ -1,46 +1,53 @@
-use std::{env, fs, mem};
+use std::{env, fs};
+
+#[derive(Debug, Clone, Copy)]
+struct Reg8(u8);
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-enum Reg8 {
-    // SAFETY: DO NOT CHANGE WITHOUT UNDERSTANDING from_bits
-    C = 0,
-    B,
-    E,
-    D,
-    L,
-    H,
-    F,
-    A,
+impl Reg8 {
+    const C: Self = Self(0);
+    const B: Self = Self(1);
+    const E: Self = Self(2);
+    const D: Self = Self(3);
+    const L: Self = Self(4);
+    const H: Self = Self(5);
+    const F: Self = Self(6);
+    const A: Self = Self(7);
 }
 
 impl Reg8 {
-    fn from_bits(bits: u8) -> Option<Reg8> {
+    fn index(&self) -> usize {
+        self.0 as usize
+    }
+
+    fn from_bits(bits: u8) -> Option<Self> {
         match bits & 0x7 {
             6 => None,
-            7 => Some(Reg8::A),
-            // SAFETY: only values 0-5 are possible, all are valid
-            bits => Some(unsafe { mem::transmute::<u8, Reg8>(bits ^ 0x1) }),
+            7 => Some(Self::A),
+            bits => Some(Self(bits ^ 0x1)),
         }
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-enum Reg16 {
-    // SAFETY: DO NOT CHANGE WITHOUT UNDERSTANDING from_bits
-    BC = 0,
-    DE = 2,
-    HL = 4,
-    AF = 6,
-    SP = 8,
+struct Reg16(u8);
+
+#[allow(dead_code)]
+impl Reg16 {
+    const BC: Self = Self(0);
+    const DE: Self = Self(2);
+    const HL: Self = Self(4);
+    const AF: Self = Self(6);
+    const SP: Self = Self(8);
 }
 
 impl Reg16 {
+    fn index(&self) -> usize {
+        self.0 as usize
+    }
+
     fn from_bits(bits: u8) -> Self {
-        unsafe { mem::transmute::<u8, Self>((bits & 0x3) << 1) }
+        Self((bits & 0x3) << 1)
     }
 }
 
@@ -66,20 +73,20 @@ struct RegisterStore {
 
 impl RegisterStore {
     fn read_8(&self, reg: Reg8) -> u8 {
-        self.regs[reg as usize]
+        self.regs[reg.index()]
     }
 
     fn write_8(&mut self, reg: Reg8, val: u8) {
-        self.regs[reg as usize] = val;
+        self.regs[reg.index()] = val;
     }
 
     fn read_16(&self, reg: Reg16) -> u16 {
-        let i = reg as usize;
+        let i = reg.index();
         u16::from_le_bytes(self.regs[i..i + 2].try_into().unwrap())
     }
 
     fn write_16(&mut self, reg: Reg16, val: u16) {
-        let i = reg as usize;
+        let i = reg.index();
         self.regs[i..i + 2].copy_from_slice(&val.to_le_bytes());
     }
 
@@ -216,13 +223,10 @@ impl Cpu {
             [0x12, ..] => (LdRM(Reg8::A, Reg16::DE), 1),
 
             // 8-bit load immediate
-            [0x06, b, ..] => (LdD8(Reg8::B, b), 2),
-            [0x16, b, ..] => (LdD8(Reg8::D, b), 2),
-            [0x26, b, ..] => (LdD8(Reg8::H, b), 2),
-            [0x0e, b, ..] => (LdD8(Reg8::C, b), 2),
-            [0x1e, b, ..] => (LdD8(Reg8::E, b), 2),
-            [0x2e, b, ..] => (LdD8(Reg8::L, b), 2),
-            [0x3e, b, ..] => (LdD8(Reg8::A, b), 2),
+            [op, b, ..] if op & 0xc7 == 0x06 => match Reg8::from_bits(op >> 3) {
+                Some(reg) => (LdD8(reg, b), 2),
+                None => todo!(),
+            }
 
             // Load/store from end of memory
             [0xe2, ..] => (LdhCA, 1),
@@ -252,32 +256,24 @@ impl Cpu {
             [op, ..] if op & 0xcf == 0xc5 => (Push(Reg16::from_bits(op >> 4)), 1),
 
             // Xor
-            [0xa8, ..] => (Xor(Reg8::B), 1),
-            [0xa9, ..] => (Xor(Reg8::C), 1),
-            [0xaa, ..] => (Xor(Reg8::D), 1),
-            [0xab, ..] => (Xor(Reg8::E), 1),
-            [0xac, ..] => (Xor(Reg8::H), 1),
-            [0xad, ..] => (Xor(Reg8::L), 1),
-            [0xaf, ..] => (Xor(Reg8::A), 1),
+            [op, ..] if op & 0xf8 == 0xa8 => match Reg8::from_bits(op) {
+                Some(reg) => (Xor(reg), 1),
+                None => todo!(),
+            }
 
             // Complement
             [0x2f, ..] => (Cpl, 1),
 
-            // 8-bit increment/decrement
-            [0x04, ..] => (Inc8(Reg8::B), 1),
-            [0x14, ..] => (Inc8(Reg8::D), 1),
-            [0x24, ..] => (Inc8(Reg8::H), 1),
-            [0x0c, ..] => (Inc8(Reg8::C), 1),
-            [0x1c, ..] => (Inc8(Reg8::E), 1),
-            [0x2c, ..] => (Inc8(Reg8::L), 1),
-            [0x3c, ..] => (Inc8(Reg8::A), 1),
-            [0x05, ..] => (Inc8(Reg8::B), 1),
-            [0x15, ..] => (Dec8(Reg8::D), 1),
-            [0x25, ..] => (Dec8(Reg8::H), 1),
-            [0x0d, ..] => (Dec8(Reg8::C), 1),
-            [0x1d, ..] => (Dec8(Reg8::E), 1),
-            [0x2d, ..] => (Dec8(Reg8::L), 1),
-            [0x3d, ..] => (Dec8(Reg8::A), 1),
+            // 8-bit increment
+            [op, ..] if op & 0xe7 == 0x04 => match Reg8::from_bits(op >> 3) {
+                Some(reg) => (Inc8(reg), 1),
+                None => todo!(),
+            }
+            // 8-bit decrement
+            [op, ..] if op & 0xe7 == 0x05 => match Reg8::from_bits(op >> 3) {
+                Some(reg) => (Dec8(reg), 1),
+                None => todo!(),
+            }
 
             // Jump to 16-bit address
             [0xc3, l, h, ..] => (JpA16(u16(l, h)), 3),
