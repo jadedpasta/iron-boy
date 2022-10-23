@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Reg8(u8);
 
 #[allow(dead_code)]
@@ -29,7 +29,7 @@ impl Reg8 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Reg16(u8);
 
 #[allow(dead_code)]
@@ -48,6 +48,15 @@ impl Reg16 {
 
     fn from_bits(bits: u8) -> Self {
         Self((bits & 0x3) << 1)
+    }
+
+    fn from_bits_sp(bits: u8) -> Self {
+        let reg = Self::from_bits(bits);
+        if reg == Self::AF {
+            Self::SP
+        } else {
+            reg
+        }
     }
 }
 
@@ -250,10 +259,7 @@ impl Cpu {
             [0x3a, ..] => (LddAHL, 1),
 
             // 16-bit load immediate
-            [0x01, l, h, ..] => (LdD16(Reg16::BC, u16(l, h)), 3),
-            [0x11, l, h, ..] => (LdD16(Reg16::DE, u16(l, h)), 3),
-            [0x21, l, h, ..] => (LdD16(Reg16::HL, u16(l, h)), 3),
-            [0x31, l, h, ..] => (LdD16(Reg16::SP, u16(l, h)), 3),
+            [op, l, h, ..] if op & 0xcf == 0x01 => (LdD16(Reg16::from_bits_sp(op >> 4), u16(l, h)), 3),
 
             // Store to immediate 8-bit address
             [0xe0, b, ..] => (LdhA8A(b), 2),
