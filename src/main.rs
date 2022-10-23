@@ -139,6 +139,7 @@ enum Instruction {
     Dec16(Reg16),
     Rla,
     Rra,
+    CpD8(u8),
     JpA16(u16),
     Jr(i8),
     JrZ(i8),
@@ -186,6 +187,7 @@ impl Instruction {
             Dec16(..) => 2,
             Rla => 1,
             Rra => 1,
+            CpD8(..) => 2,
             JpA16(..) => 4,
             Jr(..) => 3,
             JrZ(..) => 2,
@@ -298,12 +300,15 @@ impl Cpu {
                 None => todo!(),
             },
             // 16-bit increment/decrement
-            [op, ..] if op & 0xcf == 0x03 => (Inc16(Reg16::from_bits_sp(op >> 3)), 1),
-            [op, ..] if op & 0xcf == 0x0b => (Dec16(Reg16::from_bits_sp(op >> 3)), 1),
+            [op, ..] if op & 0xcf == 0x03 => (Inc16(Reg16::from_bits_sp(op >> 4)), 1),
+            [op, ..] if op & 0xcf == 0x0b => (Dec16(Reg16::from_bits_sp(op >> 4)), 1),
 
             // Rotate A register
             [0x17, ..] => (Rla, 1),
             [0x1f, ..] => (Rra, 1),
+
+            // Compare immediate
+            [0xfe, b, ..] => (CpD8(b), 2),
 
             // Jump to 16-bit address
             [0xc3, l, h, ..] => (JpA16(u16(l, h)), 3),
@@ -433,7 +438,7 @@ impl Cpu {
             }
             Dec8(reg) => {
                 let mut val = regs.read_8(reg);
-                regs.set_flags(Flag::HALFCARRY, (val & 0x0f) != 0x00);
+                regs.set_flags(Flag::HALFCARRY, (val & 0x0f) > 1);
                 val = val.wrapping_sub(1);
                 regs.write_8(reg, val);
                 regs.set_flags(Flag::ZERO, val == 0);
@@ -458,6 +463,14 @@ impl Cpu {
                 regs.write_8(Reg8::A, val);
                 regs.set_flags(Flag::ALL, false);
                 regs.set_flags(Flag::CARRY, new_carry != 0);
+            }
+            CpD8(val) => {
+                let a = regs.read_8(Reg8::A);
+                // println!("a: {a}");
+                regs.set_flags(Flag::ZERO, a == val);
+                regs.set_flags(Flag::SUB, true);
+                regs.set_flags(Flag::HALFCARRY, val & 0x0f > a & 0x0f);
+                regs.set_flags(Flag::CARRY, val > a);
             }
             JpA16(addr) => self.pc = addr,
             Jr(addr) => self.pc = self.pc.wrapping_add(addr as u16),
