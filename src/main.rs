@@ -135,6 +135,8 @@ enum Instruction {
     Cpl,
     Inc8(Reg8),
     Dec8(Reg8),
+    Inc16(Reg16),
+    Dec16(Reg16),
     Rla,
     Rra,
     JpA16(u16),
@@ -180,6 +182,8 @@ impl Instruction {
             Cpl => 1,
             Inc8(..) => 1,
             Dec8(..) => 1,
+            Inc16(..) => 2,
+            Dec16(..) => 2,
             Rla => 1,
             Rra => 1,
             JpA16(..) => 4,
@@ -259,7 +263,9 @@ impl Cpu {
             [0x3a, ..] => (LddAHL, 1),
 
             // 16-bit load immediate
-            [op, l, h, ..] if op & 0xcf == 0x01 => (LdD16(Reg16::from_bits_sp(op >> 4), u16(l, h)), 3),
+            [op, l, h, ..] if op & 0xcf == 0x01 => {
+                (LdD16(Reg16::from_bits_sp(op >> 4), u16(l, h)), 3)
+            }
 
             // Store to immediate 8-bit address
             [0xe0, b, ..] => (LdhA8A(b), 2),
@@ -291,7 +297,11 @@ impl Cpu {
                 Some(reg) => (Dec8(reg), 1),
                 None => todo!(),
             },
+            // 16-bit increment/decrement
+            [op, ..] if op & 0xcf == 0x03 => (Inc16(Reg16::from_bits_sp(op >> 3)), 1),
+            [op, ..] if op & 0xcf == 0x0b => (Dec16(Reg16::from_bits_sp(op >> 3)), 1),
 
+            // Rotate A register
             [0x17, ..] => (Rla, 1),
             [0x1f, ..] => (Rra, 1),
 
@@ -399,7 +409,10 @@ impl Cpu {
                 self.regs.write_16(Reg16::SP, sp.wrapping_add(2));
                 // Write the value into the register
                 let sp = sp as usize;
-                self.regs.write_16(reg, u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap()));
+                self.regs.write_16(
+                    reg,
+                    u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap()),
+                );
             }
             Xor(reg) => {
                 let mut a = self.regs.read_8(Reg8::A);
@@ -429,6 +442,14 @@ impl Cpu {
                 self.regs.set_flags(Flag::ZERO, val == 0);
                 self.regs.set_flags(Flag::SUB, true);
             }
+            Inc16(reg) => self
+                .regs
+                .write_16(reg, self.regs.read_16(reg).wrapping_add(1)),
+
+            Dec16(reg) => self
+                .regs
+                .write_16(reg, self.regs.read_16(reg).wrapping_sub(1)),
+
             Rla => {
                 let mut val = self.regs.read_8(Reg8::A);
                 let new_carry = val & 0x01;
@@ -437,7 +458,7 @@ impl Cpu {
                 self.regs.write_8(Reg8::A, val);
                 self.regs.set_flags(Flag::ALL, false);
                 self.regs.set_flags(Flag::CARRY, new_carry != 0);
-            },
+            }
             Rra => {
                 let mut val = self.regs.read_8(Reg8::A);
                 let new_carry = val & 0x01;
