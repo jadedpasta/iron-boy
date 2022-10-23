@@ -1,0 +1,456 @@
+use std::{env, fs, mem};
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+enum Reg8 {
+    // SAFETY: DO NOT CHANGE WITHOUT UNDERSTANDING from_bits
+    C = 0,
+    B,
+    E,
+    D,
+    L,
+    H,
+    F,
+    A,
+}
+
+impl Reg8 {
+    fn from_bits(bits: u8) -> Option<Reg8> {
+        match bits & 0x7 {
+            6 => None,
+            7 => Some(Reg8::A),
+            // SAFETY: only values 0-5 are possible, all are valid
+            bits => Some(unsafe { mem::transmute::<u8, Reg8>(bits ^ 0x1) } ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Reg16 {
+    BC = 0,
+    DE = 2,
+    HL = 4,
+    // AF = 6,
+    SP = 8,
+}
+
+enum Flag {}
+
+impl Flag {
+    const ZERO: u8 = 0x80;
+    const SUB: u8 = 0x40;
+    const HALFCARRY: u8 = 0x20;
+    const CARRY: u8 = 0x10;
+    const ALL: u8 = 0xf0;
+}
+
+#[derive(Debug, Default)]
+struct RegisterStore {
+    regs: [u8; 10],
+    // af: u16,
+    // bc: u16,
+    // de: u16,
+    // hl: u16,
+    // sp: u16,
+}
+
+impl RegisterStore {
+    fn read_8(&self, reg: Reg8) -> u8 {
+        self.regs[reg as usize]
+    }
+
+    fn write_8(&mut self, reg: Reg8, val: u8) {
+        self.regs[reg as usize] = val;
+    }
+
+    fn read_16(&self, reg: Reg16) -> u16 {
+        let i = reg as usize;
+        u16::from_le_bytes(self.regs[i..i + 2].try_into().unwrap())
+    }
+
+    fn write_16(&mut self, reg: Reg16, val: u16) {
+        let i = reg as usize;
+        self.regs[i..i + 2].copy_from_slice(&val.to_le_bytes());
+    }
+
+    fn set_flags(&mut self, flags: u8, value: bool) {
+        let mut f = self.read_8(Reg8::F);
+        f &= !flags;
+        f |= (value as u8) * flags;
+        self.write_8(Reg8::F, f);
+    }
+
+    fn get_flag(&self, flag: u8) -> bool {
+        self.read_8(Reg8::F) & flag != 0
+    }
+}
+
+#[derive(Debug, Default)]
+enum Instruction {
+    // ========== 8080 instructions ==========
+    #[default]
+    Nop,
+    LdRR(Reg8, Reg8),
+    LdRM(Reg8, Reg16),
+    LdMR(Reg16, Reg8),
+    LdD8(Reg8, u8),
+    LdhAA8(u8),
+    LdiAHL,
+    LddAHL,
+    LdD16(Reg16, u16),
+    LdhA8A(u8),
+    LdiHLA,
+    LddHLA,
+    Xor(Reg8),
+    Cpl,
+    Inc8(Reg8),
+    Dec8(Reg8),
+    JpA16(u16),
+    Jr(i8),
+    JrZ(i8),
+    JrNz(i8),
+    JrC(i8),
+    JrNc(i8),
+    CallA16(u16),
+    Ret,
+    RetZ,
+    RetNz,
+    RetC,
+    RetNc,
+    // ========== Z80/Gameboy instructions ==========
+    Bit(u8, Reg8),
+}
+
+impl Instruction {
+    fn cycles(&self) -> usize {
+        use Instruction::*;
+        match self {
+            // ========== 8080 instructions ==========
+            Nop => 1,
+            LdRR(..) => 1,
+            LdRM(..) => 2,
+            LdMR(..) => 2,
+            LdD8(..) => 2,
+            LdhAA8(..) => 3,
+            LdiHLA => 2,
+            LddHLA => 2,
+            LdD16(..) => 3,
+            LdhA8A(..) => 3,
+            LdiAHL => 2,
+            LddAHL => 2,
+            Xor(..) => 1,
+            Cpl => 1,
+            Inc8(..) => 1,
+            Dec8(..) => 1,
+            JpA16(..) => 4,
+            Jr(..) => 3,
+            JrZ(..) => 2,
+            JrNz(..) => 2,
+            JrC(..) => 2,
+            JrNc(..) => 2,
+            CallA16(..) => 6,
+            Ret => 4,
+            RetZ => 2,
+            RetNz => 2,
+            RetC => 2,
+            RetNc => 2,
+            // ========== Z80/Gameboy instructions ==========
+            Bit(..) => 2,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Cpu {
+    regs: RegisterStore,
+    pc: u16,
+    instruction: Instruction,
+    cycles_remaining: usize,
+}
+
+impl Cpu {
+    fn fetch(&mut self, memory: &[u8]) {
+        println!("PC: {:#x}", self.pc);
+
+        let inst_mem = &memory[self.pc as usize..];
+
+        fn u16(l: u8, h: u8) -> u16 {
+            u16::from_le_bytes([l, h])
+        }
+
+        use Instruction::*;
+        let (instruction, len) = match *inst_mem {
+            // ========== 8080 instructions ==========
+            [0x00, ..] => (Nop, 1),
+
+            // 8-bit load (and HALT)
+            [op, ..] if op & 0xc0 == 0x40 => {
+                match (Reg8::from_bits(op >> 3), Reg8::from_bits(op)) {
+                    (Some(dst), Some(src)) => (LdRR(dst, src), 1),
+                    (Some(dst), None) => (LdRM(dst, Reg16::HL), 1),
+                    (None, Some(src)) => (LdMR(Reg16::HL, src), 1),
+                    _ => todo!(),
+                }
+            }
+            // 8-bit load into A from memory
+            [0x0a, ..] => (LdRM(Reg8::A, Reg16::BC), 1),
+            [0x1a, ..] => (LdRM(Reg8::A, Reg16::DE), 1),
+            // 8-bit load into memory from A
+            [0x02, ..] => (LdRM(Reg8::A, Reg16::BC), 1),
+            [0x12, ..] => (LdRM(Reg8::A, Reg16::DE), 1),
+
+            // 8-bit load immediate
+            [0x06, b, ..] => (LdD8(Reg8::B, b), 2),
+            [0x16, b, ..] => (LdD8(Reg8::D, b), 2),
+            [0x26, b, ..] => (LdD8(Reg8::H, b), 2),
+            [0x0e, b, ..] => (LdD8(Reg8::C, b), 2),
+            [0x1e, b, ..] => (LdD8(Reg8::E, b), 2),
+            [0x2e, b, ..] => (LdD8(Reg8::L, b), 2),
+            [0x3e, b, ..] => (LdD8(Reg8::A, b), 2),
+            // Load from immediate 8-bit address
+            [0xf0, b, ..] => (LdhAA8(b), 2),
+
+            // 8-bit load inc/dec
+            [0x2a, ..] => (LdiAHL, 1),
+            [0x3a, ..] => (LddAHL, 1),
+
+            // 16-bit load immediate
+            [0x01, l, h, ..] => (LdD16(Reg16::BC, u16(l, h)), 3),
+            [0x11, l, h, ..] => (LdD16(Reg16::DE, u16(l, h)), 3),
+            [0x21, l, h, ..] => (LdD16(Reg16::HL, u16(l, h)), 3),
+            [0x31, l, h, ..] => (LdD16(Reg16::SP, u16(l, h)), 3),
+
+            // Store to immediate 8-bit address
+            [0xe0, b, ..] => (LdhA8A(b), 2),
+
+            // 8-bit store inc/dec
+            [0x22, ..] => (LdiHLA, 1),
+            [0x32, ..] => (LddHLA, 1),
+
+            // Xor
+            [0xa8, ..] => (Xor(Reg8::B), 1),
+            [0xa9, ..] => (Xor(Reg8::C), 1),
+            [0xaa, ..] => (Xor(Reg8::D), 1),
+            [0xab, ..] => (Xor(Reg8::E), 1),
+            [0xac, ..] => (Xor(Reg8::H), 1),
+            [0xad, ..] => (Xor(Reg8::L), 1),
+            [0xaf, ..] => (Xor(Reg8::A), 1),
+
+            // Complement
+            [0x2f, ..] => (Cpl, 1),
+
+            // 8-bit increment/decrement
+            [0x04, ..] => (Inc8(Reg8::B), 1),
+            [0x14, ..] => (Inc8(Reg8::D), 1),
+            [0x24, ..] => (Inc8(Reg8::H), 1),
+            [0x0c, ..] => (Inc8(Reg8::C), 1),
+            [0x1c, ..] => (Inc8(Reg8::E), 1),
+            [0x2c, ..] => (Inc8(Reg8::L), 1),
+            [0x3c, ..] => (Inc8(Reg8::A), 1),
+            [0x05, ..] => (Inc8(Reg8::B), 1),
+            [0x15, ..] => (Dec8(Reg8::D), 1),
+            [0x25, ..] => (Dec8(Reg8::H), 1),
+            [0x0d, ..] => (Dec8(Reg8::C), 1),
+            [0x1d, ..] => (Dec8(Reg8::E), 1),
+            [0x2d, ..] => (Dec8(Reg8::L), 1),
+            [0x3d, ..] => (Dec8(Reg8::A), 1),
+
+            // Jump to 16-bit address
+            [0xc3, l, h, ..] => (JpA16(u16(l, h)), 3),
+
+            // (Conditional) jump relative signed 8-bit address
+            [0x20, b, ..] => (JrNz(b as i8), 2),
+            [0x30, b, ..] => (JrNc(b as i8), 2),
+            [0x18, b, ..] => (Jr(b as i8), 2),
+            [0x28, b, ..] => (JrZ(b as i8), 2),
+            [0x38, b, ..] => (JrC(b as i8), 2),
+
+            // Call function at immediate 16-bit address
+            [0xcd, l, h, ..] => (CallA16(u16(l, h)), 3),
+
+            // (Conditional) return from function
+            [0xc0, ..] => (RetNz, 1),
+            [0xd0, ..] => (RetNc, 1),
+            [0xc8, ..] => (RetZ, 1),
+            [0xd8, ..] => (RetC, 1),
+            [0xc9, ..] => (Ret, 1),
+
+            // ========== Z80/Gameboy instructions ==========
+            // Test bit in register
+            [0xcb, op, ..] if op & 0xc0 == 0x40 => {
+                let bit = (op >> 3) & 0x7;
+                match Reg8::from_bits(op) {
+                    Some(reg) => (Bit(bit, reg), 2),
+                    None => todo!(),
+                }
+            }
+
+            [0xcb, op, ..] => unimplemented!("CPU instruction with opcode: 0xcb {op:#x}"),
+            [op, ..] => unimplemented!("CPU instruction with opcode: {op:#x}"),
+
+            [] => panic!("Tried to fetch instruction from the end of memory"),
+        };
+
+        self.pc += len;
+        self.cycles_remaining = instruction.cycles();
+        self.instruction = instruction;
+    }
+
+    fn execute(&mut self, memory: &mut [u8]) {
+        println!("Executing: {:?}", self.instruction);
+        use Instruction::*;
+        match self.instruction {
+            // ========== 8080 instructions ==========
+            Nop => (),
+            LdRR(dst, src) => self.regs.write_8(dst, self.regs.read_8(src)),
+            LdRM(dst, src) => self.regs.write_8(dst, memory[self.regs.read_16(src) as usize]),
+            LdMR(dst, src) => memory[self.regs.read_16(dst) as usize] = self.regs.read_8(src),
+            LdD8(reg, val) => self.regs.write_8(reg, val),
+            LdhAA8(addr) => self.regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
+            LdiAHL => {
+                let addr = self.regs.read_16(Reg16::HL);
+                self.regs.write_8(Reg8::A, memory[addr as usize]);
+                self.regs.write_16(Reg16::HL, addr.wrapping_add(1));
+            }
+            LddAHL => {
+                let addr = self.regs.read_16(Reg16::HL);
+                self.regs.write_8(Reg8::A, memory[addr as usize]);
+                self.regs.write_16(Reg16::HL, addr.wrapping_sub(1));
+            }
+            LdD16(reg, val) => self.regs.write_16(reg, val),
+            LdhA8A(addr) => memory[0xff00 + addr as usize] = self.regs.read_8(Reg8::A),
+            LdiHLA => {
+                let addr = self.regs.read_16(Reg16::HL);
+                memory[addr as usize] = self.regs.read_8(Reg8::A);
+                self.regs.write_16(Reg16::HL, addr.wrapping_add(1));
+            }
+            LddHLA => {
+                let addr = self.regs.read_16(Reg16::HL);
+                memory[addr as usize] = self.regs.read_8(Reg8::A);
+                self.regs.write_16(Reg16::HL, addr.wrapping_sub(1));
+            }
+            Xor(reg) => {
+                let mut a = self.regs.read_8(Reg8::A);
+                a ^= self.regs.read_8(reg);
+                self.regs.write_8(Reg8::A, a);
+                self.regs.set_flags(Flag::ALL, false);
+                self.regs.set_flags(Flag::ZERO, a == 0);
+            }
+            Cpl => {
+                let a = self.regs.read_8(Reg8::A);
+                self.regs.write_8(Reg8::A, !a);
+                self.regs.set_flags(Flag::SUB | Flag::HALFCARRY, true)
+            }
+            Inc8(reg) => {
+                let mut val = self.regs.read_8(reg);
+                self.regs.set_flags(Flag::HALFCARRY, (val & 0x0f) == 0x0f);
+                val = val.wrapping_add(1);
+                self.regs.write_8(reg, val);
+                self.regs.set_flags(Flag::ZERO, val == 0);
+                self.regs.set_flags(Flag::SUB, false);
+            }
+            Dec8(reg) => {
+                let mut val = self.regs.read_8(reg);
+                self.regs.set_flags(Flag::HALFCARRY, (val & 0x0f) != 0x00);
+                val = val.wrapping_sub(1);
+                self.regs.write_8(reg, val);
+                self.regs.set_flags(Flag::ZERO, val == 0);
+                self.regs.set_flags(Flag::SUB, true);
+            }
+            JpA16(addr) => self.pc = addr,
+            Jr(addr) => self.pc = self.pc.wrapping_add(addr as u16),
+            JrZ(addr) => {
+                if self.regs.get_flag(Flag::ZERO) {
+                    self.instruction = Jr(addr);
+                    self.cycles_remaining = 1;
+                }
+            }
+            JrNz(addr) => {
+                if !self.regs.get_flag(Flag::ZERO) {
+                    self.instruction = Jr(addr);
+                    self.cycles_remaining = 1;
+                }
+            }
+            JrC(addr) => {
+                if self.regs.get_flag(Flag::CARRY) {
+                    self.instruction = Jr(addr);
+                    self.cycles_remaining = 1;
+                }
+            }
+            JrNc(addr) => {
+                if !self.regs.get_flag(Flag::CARRY) {
+                    self.instruction = Jr(addr);
+                    self.cycles_remaining = 1;
+                }
+            }
+            CallA16(addr) => {
+                // Decrement the stack pointer
+                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(1);
+                self.regs.write_16(Reg16::SP, sp);
+                // Write the return address onto the stack
+                let sp = sp as usize;
+                memory[sp..sp + 2].copy_from_slice(&self.pc.to_le_bytes());
+                // Jump to the function address
+                self.pc = addr;
+            }
+            Ret => {
+                // Read the return address from the stack and jump to it
+                let sp = self.regs.read_16(Reg16::SP);
+                let addr = sp as usize;
+                self.pc = u16::from_le_bytes(memory[addr..addr + 2].try_into().unwrap());
+                // Increment the stack pointer
+                self.regs.write_16(Reg16::SP, sp.wrapping_add(1));
+            }
+            RetZ => {
+                if self.regs.get_flag(Flag::ZERO) {
+                    self.instruction = Ret;
+                    self.cycles_remaining = 3;
+                }
+            }
+            RetNz => {
+                if !self.regs.get_flag(Flag::ZERO) {
+                    self.instruction = Ret;
+                    self.cycles_remaining = 3;
+                }
+            }
+            RetC => {
+                if self.regs.get_flag(Flag::CARRY) {
+                    self.instruction = Ret;
+                    self.cycles_remaining = 3;
+                }
+            }
+            RetNc => {
+                if !self.regs.get_flag(Flag::CARRY) {
+                    self.instruction = Ret;
+                    self.cycles_remaining = 3;
+                }
+            }
+            // ========== Z80/Gameboy instructions ==========
+            Bit(bit, reg) => {
+                self.regs.set_flags(Flag::ZERO, self.regs.read_8(reg) & (1 << bit) == 0);
+                self.regs.set_flags(Flag::SUB, false);
+                self.regs.set_flags(Flag::HALFCARRY, true);
+            }
+        }
+    }
+
+    fn cycle(&mut self, memory: &mut [u8]) {
+        if self.cycles_remaining == 0 {
+            self.fetch(memory);
+        }
+        self.cycles_remaining -= 1;
+        if self.cycles_remaining == 0 {
+            self.execute(memory);
+        }
+    }
+}
+
+fn main() {
+    let args: Vec<_> = env::args().collect();
+    let mut memory = fs::read(&args[1]).unwrap();
+    memory.resize(0x10000, 0);
+    let mut cpu = Cpu::default();
+    loop {
+        cpu.cycle(&mut memory[..]);
+    }
+}
