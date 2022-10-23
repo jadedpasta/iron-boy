@@ -1,5 +1,6 @@
 use std::{env, fs, mem};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 enum Reg8 {
@@ -20,18 +21,27 @@ impl Reg8 {
             6 => None,
             7 => Some(Reg8::A),
             // SAFETY: only values 0-5 are possible, all are valid
-            bits => Some(unsafe { mem::transmute::<u8, Reg8>(bits ^ 0x1) } ),
+            bits => Some(unsafe { mem::transmute::<u8, Reg8>(bits ^ 0x1) }),
         }
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 enum Reg16 {
+    // SAFETY: DO NOT CHANGE WITHOUT UNDERSTANDING from_bits
     BC = 0,
     DE = 2,
     HL = 4,
-    // AF = 6,
+    AF = 6,
     SP = 8,
+}
+
+impl Reg16 {
+    fn from_bits(bits: u8) -> Self {
+        unsafe { mem::transmute::<u8, Self>((bits & 0x3) << 1) }
+    }
 }
 
 enum Flag {}
@@ -94,6 +104,8 @@ enum Instruction {
     LdRM(Reg8, Reg16),
     LdMR(Reg16, Reg8),
     LdD8(Reg8, u8),
+    LdhCA,
+    LdhAC,
     LdhAA8(u8),
     LdiAHL,
     LddAHL,
@@ -101,6 +113,7 @@ enum Instruction {
     LdhA8A(u8),
     LdiHLA,
     LddHLA,
+    Push(Reg16),
     Xor(Reg8),
     Cpl,
     Inc8(Reg8),
@@ -131,6 +144,8 @@ impl Instruction {
             LdRM(..) => 2,
             LdMR(..) => 2,
             LdD8(..) => 2,
+            LdhCA => 2,
+            LdhAC => 2,
             LdhAA8(..) => 3,
             LdiHLA => 2,
             LddHLA => 2,
@@ -138,6 +153,7 @@ impl Instruction {
             LdhA8A(..) => 3,
             LdiAHL => 2,
             LddAHL => 2,
+            Push(..) => 3,
             Xor(..) => 1,
             Cpl => 1,
             Inc8(..) => 1,
@@ -207,6 +223,11 @@ impl Cpu {
             [0x1e, b, ..] => (LdD8(Reg8::E, b), 2),
             [0x2e, b, ..] => (LdD8(Reg8::L, b), 2),
             [0x3e, b, ..] => (LdD8(Reg8::A, b), 2),
+
+            // Load/store from end of memory
+            [0xe2, ..] => (LdhCA, 1),
+            [0xf2, ..] => (LdhAC, 1),
+
             // Load from immediate 8-bit address
             [0xf0, b, ..] => (LdhAA8(b), 2),
 
@@ -226,6 +247,9 @@ impl Cpu {
             // 8-bit store inc/dec
             [0x22, ..] => (LdiHLA, 1),
             [0x32, ..] => (LddHLA, 1),
+
+            // 16-bit push
+            [op, ..] if op & 0xcf == 0xc5 => (Push(Reg16::from_bits(op >> 4)), 1),
 
             // Xor
             [0xa8, ..] => (Xor(Reg8::B), 1),
@@ -303,9 +327,17 @@ impl Cpu {
             // ========== 8080 instructions ==========
             Nop => (),
             LdRR(dst, src) => self.regs.write_8(dst, self.regs.read_8(src)),
-            LdRM(dst, src) => self.regs.write_8(dst, memory[self.regs.read_16(src) as usize]),
+            LdRM(dst, src) => self
+                .regs
+                .write_8(dst, memory[self.regs.read_16(src) as usize]),
             LdMR(dst, src) => memory[self.regs.read_16(dst) as usize] = self.regs.read_8(src),
             LdD8(reg, val) => self.regs.write_8(reg, val),
+            LdhAC => self
+                .regs
+                .write_8(Reg8::A, memory[0xff00 + self.regs.read_8(Reg8::C) as usize]),
+            LdhCA => {
+                memory[0xff00 + self.regs.read_8(Reg8::C) as usize] = self.regs.read_8(Reg8::A);
+            }
             LdhAA8(addr) => self.regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
             LdiAHL => {
                 let addr = self.regs.read_16(Reg16::HL);
@@ -328,6 +360,14 @@ impl Cpu {
                 let addr = self.regs.read_16(Reg16::HL);
                 memory[addr as usize] = self.regs.read_8(Reg8::A);
                 self.regs.write_16(Reg16::HL, addr.wrapping_sub(1));
+            }
+            Push(reg) => {
+                // Decrement the stack pointer
+                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(2);
+                self.regs.write_16(Reg16::SP, sp);
+                // Write the value onto the stack
+                let sp = sp as usize;
+                memory[sp..sp + 2].copy_from_slice(&self.regs.read_16(reg).to_le_bytes());
             }
             Xor(reg) => {
                 let mut a = self.regs.read_8(Reg8::A);
@@ -385,7 +425,7 @@ impl Cpu {
             }
             CallA16(addr) => {
                 // Decrement the stack pointer
-                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(1);
+                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(2);
                 self.regs.write_16(Reg16::SP, sp);
                 // Write the return address onto the stack
                 let sp = sp as usize;
@@ -399,7 +439,7 @@ impl Cpu {
                 let addr = sp as usize;
                 self.pc = u16::from_le_bytes(memory[addr..addr + 2].try_into().unwrap());
                 // Increment the stack pointer
-                self.regs.write_16(Reg16::SP, sp.wrapping_add(1));
+                self.regs.write_16(Reg16::SP, sp.wrapping_add(2));
             }
             RetZ => {
                 if self.regs.get_flag(Flag::ZERO) {
@@ -427,7 +467,8 @@ impl Cpu {
             }
             // ========== Z80/Gameboy instructions ==========
             Bit(bit, reg) => {
-                self.regs.set_flags(Flag::ZERO, self.regs.read_8(reg) & (1 << bit) == 0);
+                self.regs
+                    .set_flags(Flag::ZERO, self.regs.read_8(reg) & (1 << bit) == 0);
                 self.regs.set_flags(Flag::SUB, false);
                 self.regs.set_flags(Flag::HALFCARRY, true);
             }
