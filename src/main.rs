@@ -356,148 +356,139 @@ impl Cpu {
 
     fn execute(&mut self, memory: &mut [u8]) {
         println!("Executing: {:?}", self.instruction);
+        let regs = &mut self.regs;
         use Instruction::*;
         match self.instruction {
             // ========== 8080 instructions ==========
             Nop => (),
-            LdRR(dst, src) => self.regs.write_8(dst, self.regs.read_8(src)),
-            LdRM(dst, src) => self
-                .regs
-                .write_8(dst, memory[self.regs.read_16(src) as usize]),
-            LdMR(dst, src) => memory[self.regs.read_16(dst) as usize] = self.regs.read_8(src),
-            LdD8(reg, val) => self.regs.write_8(reg, val),
-            LdhAC => self
-                .regs
-                .write_8(Reg8::A, memory[0xff00 + self.regs.read_8(Reg8::C) as usize]),
+            LdRR(dst, src) => regs.write_8(dst, regs.read_8(src)),
+            LdRM(dst, src) => regs.write_8(dst, memory[regs.read_16(src) as usize]),
+            LdMR(dst, src) => memory[regs.read_16(dst) as usize] = regs.read_8(src),
+            LdD8(reg, val) => regs.write_8(reg, val),
+            LdhAC => regs.write_8(Reg8::A, memory[0xff00 + regs.read_8(Reg8::C) as usize]),
             LdhCA => {
-                memory[0xff00 + self.regs.read_8(Reg8::C) as usize] = self.regs.read_8(Reg8::A);
+                memory[0xff00 + regs.read_8(Reg8::C) as usize] = regs.read_8(Reg8::A);
             }
-            LdhAA8(addr) => self.regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
+            LdhAA8(addr) => regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
             LdiAHL => {
-                let addr = self.regs.read_16(Reg16::HL);
-                self.regs.write_8(Reg8::A, memory[addr as usize]);
-                self.regs.write_16(Reg16::HL, addr.wrapping_add(1));
+                let addr = regs.read_16(Reg16::HL);
+                regs.write_8(Reg8::A, memory[addr as usize]);
+                regs.write_16(Reg16::HL, addr.wrapping_add(1));
             }
             LddAHL => {
-                let addr = self.regs.read_16(Reg16::HL);
-                self.regs.write_8(Reg8::A, memory[addr as usize]);
-                self.regs.write_16(Reg16::HL, addr.wrapping_sub(1));
+                let addr = regs.read_16(Reg16::HL);
+                regs.write_8(Reg8::A, memory[addr as usize]);
+                regs.write_16(Reg16::HL, addr.wrapping_sub(1));
             }
-            LdD16(reg, val) => self.regs.write_16(reg, val),
-            LdhA8A(addr) => memory[0xff00 + addr as usize] = self.regs.read_8(Reg8::A),
+            LdD16(reg, val) => regs.write_16(reg, val),
+            LdhA8A(addr) => memory[0xff00 + addr as usize] = regs.read_8(Reg8::A),
             LdiHLA => {
-                let addr = self.regs.read_16(Reg16::HL);
-                memory[addr as usize] = self.regs.read_8(Reg8::A);
-                self.regs.write_16(Reg16::HL, addr.wrapping_add(1));
+                let addr = regs.read_16(Reg16::HL);
+                memory[addr as usize] = regs.read_8(Reg8::A);
+                regs.write_16(Reg16::HL, addr.wrapping_add(1));
             }
             LddHLA => {
-                let addr = self.regs.read_16(Reg16::HL);
-                memory[addr as usize] = self.regs.read_8(Reg8::A);
-                self.regs.write_16(Reg16::HL, addr.wrapping_sub(1));
+                let addr = regs.read_16(Reg16::HL);
+                memory[addr as usize] = regs.read_8(Reg8::A);
+                regs.write_16(Reg16::HL, addr.wrapping_sub(1));
             }
             Push(reg) => {
                 // Decrement the stack pointer
-                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(2);
-                self.regs.write_16(Reg16::SP, sp);
+                let sp = regs.read_16(Reg16::SP).wrapping_sub(2);
+                regs.write_16(Reg16::SP, sp);
                 // Write the value onto the stack
                 let sp = sp as usize;
-                memory[sp..sp + 2].copy_from_slice(&self.regs.read_16(reg).to_le_bytes());
+                memory[sp..sp + 2].copy_from_slice(&regs.read_16(reg).to_le_bytes());
             }
             Pop(reg) => {
                 // Increment the stack pointer
-                let sp = self.regs.read_16(Reg16::SP);
-                self.regs.write_16(Reg16::SP, sp.wrapping_add(2));
+                let sp = regs.read_16(Reg16::SP);
+                regs.write_16(Reg16::SP, sp.wrapping_add(2));
                 // Write the value into the register
                 let sp = sp as usize;
-                self.regs.write_16(
+                regs.write_16(
                     reg,
                     u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap()),
                 );
             }
             Xor(reg) => {
-                let mut a = self.regs.read_8(Reg8::A);
-                a ^= self.regs.read_8(reg);
-                self.regs.write_8(Reg8::A, a);
-                self.regs.set_flags(Flag::ALL, false);
-                self.regs.set_flags(Flag::ZERO, a == 0);
+                let mut a = regs.read_8(Reg8::A);
+                a ^= regs.read_8(reg);
+                regs.write_8(Reg8::A, a);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, a == 0);
             }
             Cpl => {
-                let a = self.regs.read_8(Reg8::A);
-                self.regs.write_8(Reg8::A, !a);
-                self.regs.set_flags(Flag::SUB | Flag::HALFCARRY, true)
+                let a = regs.read_8(Reg8::A);
+                regs.write_8(Reg8::A, !a);
+                regs.set_flags(Flag::SUB | Flag::HALFCARRY, true)
             }
             Inc8(reg) => {
-                let mut val = self.regs.read_8(reg);
-                self.regs.set_flags(Flag::HALFCARRY, (val & 0x0f) == 0x0f);
+                let mut val = regs.read_8(reg);
+                regs.set_flags(Flag::HALFCARRY, (val & 0x0f) == 0x0f);
                 val = val.wrapping_add(1);
-                self.regs.write_8(reg, val);
-                self.regs.set_flags(Flag::ZERO, val == 0);
-                self.regs.set_flags(Flag::SUB, false);
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ZERO, val == 0);
+                regs.set_flags(Flag::SUB, false);
             }
             Dec8(reg) => {
-                let mut val = self.regs.read_8(reg);
-                self.regs.set_flags(Flag::HALFCARRY, (val & 0x0f) != 0x00);
+                let mut val = regs.read_8(reg);
+                regs.set_flags(Flag::HALFCARRY, (val & 0x0f) != 0x00);
                 val = val.wrapping_sub(1);
-                self.regs.write_8(reg, val);
-                self.regs.set_flags(Flag::ZERO, val == 0);
-                self.regs.set_flags(Flag::SUB, true);
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ZERO, val == 0);
+                regs.set_flags(Flag::SUB, true);
             }
-            Inc16(reg) => self
-                .regs
-                .write_16(reg, self.regs.read_16(reg).wrapping_add(1)),
-
-            Dec16(reg) => self
-                .regs
-                .write_16(reg, self.regs.read_16(reg).wrapping_sub(1)),
-
+            Inc16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_add(1)),
+            Dec16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_sub(1)),
             Rla => {
-                let mut val = self.regs.read_8(Reg8::A);
+                let mut val = regs.read_8(Reg8::A);
                 let new_carry = val & 0x01;
                 val >>= 1;
-                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
-                self.regs.write_8(Reg8::A, val);
-                self.regs.set_flags(Flag::ALL, false);
-                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+                val |= (regs.get_flag(Flag::CARRY) as u8) << 7;
+                regs.write_8(Reg8::A, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
             }
             Rra => {
-                let mut val = self.regs.read_8(Reg8::A);
+                let mut val = regs.read_8(Reg8::A);
                 let new_carry = val & 0x01;
                 val >>= 1;
-                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
-                self.regs.write_8(Reg8::A, val);
-                self.regs.set_flags(Flag::ALL, false);
-                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+                val |= (regs.get_flag(Flag::CARRY) as u8) << 7;
+                regs.write_8(Reg8::A, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
             }
             JpA16(addr) => self.pc = addr,
             Jr(addr) => self.pc = self.pc.wrapping_add(addr as u16),
             JrZ(addr) => {
-                if self.regs.get_flag(Flag::ZERO) {
+                if regs.get_flag(Flag::ZERO) {
                     self.instruction = Jr(addr);
                     self.cycles_remaining = 1;
                 }
             }
             JrNz(addr) => {
-                if !self.regs.get_flag(Flag::ZERO) {
+                if !regs.get_flag(Flag::ZERO) {
                     self.instruction = Jr(addr);
                     self.cycles_remaining = 1;
                 }
             }
             JrC(addr) => {
-                if self.regs.get_flag(Flag::CARRY) {
+                if regs.get_flag(Flag::CARRY) {
                     self.instruction = Jr(addr);
                     self.cycles_remaining = 1;
                 }
             }
             JrNc(addr) => {
-                if !self.regs.get_flag(Flag::CARRY) {
+                if !regs.get_flag(Flag::CARRY) {
                     self.instruction = Jr(addr);
                     self.cycles_remaining = 1;
                 }
             }
             CallA16(addr) => {
                 // Decrement the stack pointer
-                let sp = self.regs.read_16(Reg16::SP).wrapping_sub(2);
-                self.regs.write_16(Reg16::SP, sp);
+                let sp = regs.read_16(Reg16::SP).wrapping_sub(2);
+                regs.write_16(Reg16::SP, sp);
                 // Write the return address onto the stack
                 let sp = sp as usize;
                 memory[sp..sp + 2].copy_from_slice(&self.pc.to_le_bytes());
@@ -506,62 +497,61 @@ impl Cpu {
             }
             Ret => {
                 // Read the return address from the stack and jump to it
-                let sp = self.regs.read_16(Reg16::SP);
+                let sp = regs.read_16(Reg16::SP);
                 let addr = sp as usize;
                 self.pc = u16::from_le_bytes(memory[addr..addr + 2].try_into().unwrap());
                 // Increment the stack pointer
-                self.regs.write_16(Reg16::SP, sp.wrapping_add(2));
+                regs.write_16(Reg16::SP, sp.wrapping_add(2));
             }
             RetZ => {
-                if self.regs.get_flag(Flag::ZERO) {
+                if regs.get_flag(Flag::ZERO) {
                     self.instruction = Ret;
                     self.cycles_remaining = 3;
                 }
             }
             RetNz => {
-                if !self.regs.get_flag(Flag::ZERO) {
+                if !regs.get_flag(Flag::ZERO) {
                     self.instruction = Ret;
                     self.cycles_remaining = 3;
                 }
             }
             RetC => {
-                if self.regs.get_flag(Flag::CARRY) {
+                if regs.get_flag(Flag::CARRY) {
                     self.instruction = Ret;
                     self.cycles_remaining = 3;
                 }
             }
             RetNc => {
-                if !self.regs.get_flag(Flag::CARRY) {
+                if !regs.get_flag(Flag::CARRY) {
                     self.instruction = Ret;
                     self.cycles_remaining = 3;
                 }
             }
             // ========== Z80/Gameboy instructions ==========
             Bit(bit, reg) => {
-                self.regs
-                    .set_flags(Flag::ZERO, self.regs.read_8(reg) & (1 << bit) == 0);
-                self.regs.set_flags(Flag::SUB, false);
-                self.regs.set_flags(Flag::HALFCARRY, true);
+                regs.set_flags(Flag::ZERO, regs.read_8(reg) & (1 << bit) == 0);
+                regs.set_flags(Flag::SUB, false);
+                regs.set_flags(Flag::HALFCARRY, true);
             }
             Rl(reg) => {
-                let mut val = self.regs.read_8(reg);
+                let mut val = regs.read_8(reg);
                 let new_carry = val >> 7;
                 val <<= 1;
-                val |= self.regs.get_flag(Flag::CARRY) as u8;
-                self.regs.write_8(reg, val);
-                self.regs.set_flags(Flag::ALL, false);
-                self.regs.set_flags(Flag::ZERO, val == 0);
-                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+                val |= regs.get_flag(Flag::CARRY) as u8;
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, val == 0);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
             }
             Rr(reg) => {
-                let mut val = self.regs.read_8(reg);
+                let mut val = regs.read_8(reg);
                 let new_carry = val & 0x01;
                 val >>= 1;
-                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
-                self.regs.write_8(reg, val);
-                self.regs.set_flags(Flag::ALL, false);
-                self.regs.set_flags(Flag::ZERO, val == 0);
-                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+                val |= (regs.get_flag(Flag::CARRY) as u8) << 7;
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, val == 0);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
             }
         }
     }
