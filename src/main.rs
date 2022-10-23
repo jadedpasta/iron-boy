@@ -125,6 +125,8 @@ enum Instruction {
     Cpl,
     Inc8(Reg8),
     Dec8(Reg8),
+    Rla,
+    Rra,
     JpA16(u16),
     Jr(i8),
     JrZ(i8),
@@ -139,6 +141,8 @@ enum Instruction {
     RetNc,
     // ========== Z80/Gameboy instructions ==========
     Bit(u8, Reg8),
+    Rl(Reg8),
+    Rr(Reg8),
 }
 
 impl Instruction {
@@ -165,6 +169,8 @@ impl Instruction {
             Cpl => 1,
             Inc8(..) => 1,
             Dec8(..) => 1,
+            Rla => 1,
+            Rra => 1,
             JpA16(..) => 4,
             Jr(..) => 3,
             JrZ(..) => 2,
@@ -179,6 +185,8 @@ impl Instruction {
             RetNc => 2,
             // ========== Z80/Gameboy instructions ==========
             Bit(..) => 2,
+            Rl(..) => 2,
+            Rr(..) => 2,
         }
     }
 }
@@ -226,7 +234,7 @@ impl Cpu {
             [op, b, ..] if op & 0xc7 == 0x06 => match Reg8::from_bits(op >> 3) {
                 Some(reg) => (LdD8(reg, b), 2),
                 None => todo!(),
-            }
+            },
 
             // Load/store from end of memory
             [0xe2, ..] => (LdhCA, 1),
@@ -259,7 +267,7 @@ impl Cpu {
             [op, ..] if op & 0xf8 == 0xa8 => match Reg8::from_bits(op) {
                 Some(reg) => (Xor(reg), 1),
                 None => todo!(),
-            }
+            },
 
             // Complement
             [0x2f, ..] => (Cpl, 1),
@@ -268,12 +276,15 @@ impl Cpu {
             [op, ..] if op & 0xe7 == 0x04 => match Reg8::from_bits(op >> 3) {
                 Some(reg) => (Inc8(reg), 1),
                 None => todo!(),
-            }
+            },
             // 8-bit decrement
             [op, ..] if op & 0xe7 == 0x05 => match Reg8::from_bits(op >> 3) {
                 Some(reg) => (Dec8(reg), 1),
                 None => todo!(),
-            }
+            },
+
+            [0x17, ..] => (Rla, 1),
+            [0x1f, ..] => (Rra, 1),
 
             // Jump to 16-bit address
             [0xc3, l, h, ..] => (JpA16(u16(l, h)), 3),
@@ -304,6 +315,14 @@ impl Cpu {
                     None => todo!(),
                 }
             }
+            [0xcb, op, ..] if op & 0xf8 == 0x10 => match Reg8::from_bits(op) {
+                Some(reg) => (Rl(reg), 2),
+                None => todo!(),
+            },
+            [0xcb, op, ..] if op & 0xf8 == 0x18 => match Reg8::from_bits(op) {
+                Some(reg) => (Rr(reg), 2),
+                None => todo!(),
+            },
 
             [0xcb, op, ..] => unimplemented!("CPU instruction with opcode: 0xcb {op:#x}"),
             [op, ..] => unimplemented!("CPU instruction with opcode: {op:#x}"),
@@ -393,6 +412,24 @@ impl Cpu {
                 self.regs.set_flags(Flag::ZERO, val == 0);
                 self.regs.set_flags(Flag::SUB, true);
             }
+            Rla => {
+                let mut val = self.regs.read_8(Reg8::A);
+                let new_carry = val & 0x01;
+                val >>= 1;
+                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
+                self.regs.write_8(Reg8::A, val);
+                self.regs.set_flags(Flag::ALL, false);
+                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+            },
+            Rra => {
+                let mut val = self.regs.read_8(Reg8::A);
+                let new_carry = val & 0x01;
+                val >>= 1;
+                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
+                self.regs.write_8(Reg8::A, val);
+                self.regs.set_flags(Flag::ALL, false);
+                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+            }
             JpA16(addr) => self.pc = addr,
             Jr(addr) => self.pc = self.pc.wrapping_add(addr as u16),
             JrZ(addr) => {
@@ -467,6 +504,26 @@ impl Cpu {
                     .set_flags(Flag::ZERO, self.regs.read_8(reg) & (1 << bit) == 0);
                 self.regs.set_flags(Flag::SUB, false);
                 self.regs.set_flags(Flag::HALFCARRY, true);
+            }
+            Rl(reg) => {
+                let mut val = self.regs.read_8(reg);
+                let new_carry = val >> 7;
+                val <<= 1;
+                val |= self.regs.get_flag(Flag::CARRY) as u8;
+                self.regs.write_8(reg, val);
+                self.regs.set_flags(Flag::ALL, false);
+                self.regs.set_flags(Flag::ZERO, val == 0);
+                self.regs.set_flags(Flag::CARRY, new_carry != 0);
+            }
+            Rr(reg) => {
+                let mut val = self.regs.read_8(reg);
+                let new_carry = val & 0x01;
+                val >>= 1;
+                val |= (self.regs.get_flag(Flag::CARRY) as u8) << 7;
+                self.regs.write_8(reg, val);
+                self.regs.set_flags(Flag::ALL, false);
+                self.regs.set_flags(Flag::ZERO, val == 0);
+                self.regs.set_flags(Flag::CARRY, new_carry != 0);
             }
         }
     }
