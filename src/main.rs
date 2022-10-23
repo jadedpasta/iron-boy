@@ -123,6 +123,8 @@ enum Instruction {
     LdhCA,
     LdhAC,
     LdhAA8(u8),
+    LdA16A(u16),
+    LdAA16(u16),
     LdiAHL,
     LddAHL,
     LdD16(Reg16, u16),
@@ -132,13 +134,19 @@ enum Instruction {
     Push(Reg16),
     Pop(Reg16),
     Xor(Reg8),
+    Or(Reg8),
+    AndD8(u8),
     Cpl,
     Inc8(Reg8),
     Dec8(Reg8),
     Inc16(Reg16),
     Dec16(Reg16),
+    AddHl(Reg16),
+    Rlca,
+    Rrca,
     Rla,
     Rra,
+    Cp(Reg8),
     CpD8(u8),
     JpA16(u16),
     Jr(i8),
@@ -154,8 +162,11 @@ enum Instruction {
     RetNc,
     // ========== Z80/Gameboy instructions ==========
     Bit(u8, Reg8),
+    Rlc(Reg8),
+    Rrc(Reg8),
     Rl(Reg8),
     Rr(Reg8),
+    Swap(Reg8),
 }
 
 impl Instruction {
@@ -171,6 +182,8 @@ impl Instruction {
             LdhCA => 2,
             LdhAC => 2,
             LdhAA8(..) => 3,
+            LdA16A(..) => 4,
+            LdAA16(..) => 4,
             LdiHLA => 2,
             LddHLA => 2,
             LdD16(..) => 3,
@@ -180,13 +193,19 @@ impl Instruction {
             Push(..) => 4,
             Pop(..) => 3,
             Xor(..) => 1,
+            Or(..) => 1,
+            AndD8(..) => 2,
             Cpl => 1,
             Inc8(..) => 1,
             Dec8(..) => 1,
             Inc16(..) => 2,
             Dec16(..) => 2,
+            AddHl(..) => 2,
+            Rlca => 1,
+            Rrca => 1,
             Rla => 1,
             Rra => 1,
+            Cp(..) => 1,
             CpD8(..) => 2,
             JpA16(..) => 4,
             Jr(..) => 3,
@@ -202,8 +221,11 @@ impl Instruction {
             RetNc => 2,
             // ========== Z80/Gameboy instructions ==========
             Bit(..) => 2,
+            Rlc(..) => 2,
+            Rrc(..) => 2,
             Rl(..) => 2,
             Rr(..) => 2,
+            Swap(..) => 2,
         }
     }
 }
@@ -259,6 +281,9 @@ impl Cpu {
 
             // Load from immediate 8-bit address
             [0xf0, b, ..] => (LdhAA8(b), 2),
+            // Load to/from immediate 16-bit address
+            [0xea, l, h, ..] => (LdA16A(u16(l, h)), 3),
+            [0xfa, l, h, ..] => (LdAA16(u16(l, h)), 3),
 
             // 8-bit load inc/dec
             [0x2a, ..] => (LdiAHL, 1),
@@ -286,16 +311,25 @@ impl Cpu {
                 None => todo!(),
             },
 
+            // Or
+            [op, ..] if op & 0xf8 == 0xb0 => match Reg8::from_bits(op) {
+                Some(reg) => (Or(reg), 1),
+                None => todo!(),
+            },
+
+            // And
+            [0xe6, b, ..] => (AndD8(b), 2),
+
             // Complement
             [0x2f, ..] => (Cpl, 1),
 
             // 8-bit increment
-            [op, ..] if op & 0xe7 == 0x04 => match Reg8::from_bits(op >> 3) {
+            [op, ..] if op & 0xc7 == 0x04 => match Reg8::from_bits(op >> 3) {
                 Some(reg) => (Inc8(reg), 1),
                 None => todo!(),
             },
             // 8-bit decrement
-            [op, ..] if op & 0xe7 == 0x05 => match Reg8::from_bits(op >> 3) {
+            [op, ..] if op & 0xc7 == 0x05 => match Reg8::from_bits(op >> 3) {
                 Some(reg) => (Dec8(reg), 1),
                 None => todo!(),
             },
@@ -303,11 +337,20 @@ impl Cpu {
             [op, ..] if op & 0xcf == 0x03 => (Inc16(Reg16::from_bits_sp(op >> 4)), 1),
             [op, ..] if op & 0xcf == 0x0b => (Dec16(Reg16::from_bits_sp(op >> 4)), 1),
 
+            // 16-bit add to HL
+            [op, ..] if op & 0xcf == 0x09 => (AddHl(Reg16::from_bits_sp(op >> 4)), 1),
+
             // Rotate A register
+            [0x07, ..] => (Rlca, 1),
+            [0x0f, ..] => (Rrca, 1),
             [0x17, ..] => (Rla, 1),
             [0x1f, ..] => (Rra, 1),
 
-            // Compare immediate
+            // Compare
+            [op, ..] if op & 0xf8 == 0xb8 => match Reg8::from_bits(op) {
+                Some(reg) => (Cp(reg), 1),
+                None => todo!(),
+            },
             [0xfe, b, ..] => (CpD8(b), 2),
 
             // Jump to 16-bit address
@@ -339,12 +382,29 @@ impl Cpu {
                     None => todo!(),
                 }
             }
+            // Rlc
+            [0xcb, op, ..] if op & 0xf8 == 0x00 => match Reg8::from_bits(op) {
+                Some(reg) => (Rlc(reg), 2),
+                None => todo!(),
+            },
+            // Rrc
+            [0xcb, op, ..] if op & 0xf8 == 0x08 => match Reg8::from_bits(op) {
+                Some(reg) => (Rrc(reg), 2),
+                None => todo!(),
+            },
+            // Rl
             [0xcb, op, ..] if op & 0xf8 == 0x10 => match Reg8::from_bits(op) {
                 Some(reg) => (Rl(reg), 2),
                 None => todo!(),
             },
+            // Rr
             [0xcb, op, ..] if op & 0xf8 == 0x18 => match Reg8::from_bits(op) {
                 Some(reg) => (Rr(reg), 2),
+                None => todo!(),
+            },
+            // Swap
+            [0xcb, op, ..] if op & 0xf8 == 0x30 => match Reg8::from_bits(op) {
+                Some(reg) => (Swap(reg), 2),
                 None => todo!(),
             },
 
@@ -375,6 +435,8 @@ impl Cpu {
                 memory[0xff00 + regs.read_8(Reg8::C) as usize] = regs.read_8(Reg8::A);
             }
             LdhAA8(addr) => regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
+            LdA16A(addr) => memory[addr as usize] = regs.read_8(Reg8::A),
+            LdAA16(addr) => regs.write_8(Reg8::A, memory[addr as usize]),
             LdiAHL => {
                 let addr = regs.read_16(Reg16::HL);
                 regs.write_8(Reg8::A, memory[addr as usize]);
@@ -423,6 +485,20 @@ impl Cpu {
                 regs.set_flags(Flag::ALL, false);
                 regs.set_flags(Flag::ZERO, a == 0);
             }
+            Or(reg) => {
+                let mut a = regs.read_8(Reg8::A);
+                a |= regs.read_8(reg);
+                regs.write_8(Reg8::A, a);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, a == 0);
+            }
+            AndD8(val) => {
+                let a = regs.read_8(Reg8::A) & val;
+                regs.write_8(Reg8::A, a);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, a == 0);
+                regs.set_flags(Flag::HALFCARRY, true);
+            }
             Cpl => {
                 let a = regs.read_8(Reg8::A);
                 regs.write_8(Reg8::A, !a);
@@ -446,11 +522,37 @@ impl Cpu {
             }
             Inc16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_add(1)),
             Dec16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_sub(1)),
-            Rla => {
+            AddHl(reg) => {
+                let hl = regs.read_16(Reg16::HL);
+                let val = regs.read_16(reg);
+                regs.write_16(Reg16::HL, hl.wrapping_add(val));
+                regs.set_flags(Flag::SUB, false);
+                regs.set_flags(Flag::HALFCARRY, (hl & 0x0fff) + (val & 0x0fff) > 0x0fff);
+                regs.set_flags(Flag::CARRY, hl.checked_add(val).is_none());
+            },
+            Rlca => {
+                let mut val = regs.read_8(Reg8::A);
+                let new_carry = val >> 7;
+                val <<= 1;
+                val |= new_carry;
+                regs.write_8(Reg8::A, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
+            }
+            Rrca => {
                 let mut val = regs.read_8(Reg8::A);
                 let new_carry = val & 0x01;
                 val >>= 1;
-                val |= (regs.get_flag(Flag::CARRY) as u8) << 7;
+                val |= new_carry << 7;
+                regs.write_8(Reg8::A, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
+            }
+            Rla => {
+                let mut val = regs.read_8(Reg8::A);
+                let new_carry = val >> 7;
+                val <<= 1;
+                val |= regs.get_flag(Flag::CARRY) as u8;
                 regs.write_8(Reg8::A, val);
                 regs.set_flags(Flag::ALL, false);
                 regs.set_flags(Flag::CARRY, new_carry != 0);
@@ -464,9 +566,17 @@ impl Cpu {
                 regs.set_flags(Flag::ALL, false);
                 regs.set_flags(Flag::CARRY, new_carry != 0);
             }
+            Cp(reg) => {
+                let a = regs.read_8(Reg8::A);
+                let val = regs.read_8(reg);
+                regs.write_8(Reg8::A, a.wrapping_sub(val));
+                regs.set_flags(Flag::ZERO, a == val);
+                regs.set_flags(Flag::SUB, true);
+                regs.set_flags(Flag::HALFCARRY, val & 0x0f > a & 0x0f);
+                regs.set_flags(Flag::CARRY, val > a);
+            }
             CpD8(val) => {
                 let a = regs.read_8(Reg8::A);
-                // println!("a: {a}");
                 regs.set_flags(Flag::ZERO, a == val);
                 regs.set_flags(Flag::SUB, true);
                 regs.set_flags(Flag::HALFCARRY, val & 0x0f > a & 0x0f);
@@ -546,6 +656,26 @@ impl Cpu {
                 regs.set_flags(Flag::SUB, false);
                 regs.set_flags(Flag::HALFCARRY, true);
             }
+            Rlc(reg) => {
+                let mut val = regs.read_8(reg);
+                let new_carry = val >> 7;
+                val <<= 1;
+                val |= new_carry;
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
+                regs.set_flags(Flag::ZERO, val == 0);
+            }
+            Rrc(reg) => {
+                let mut val = regs.read_8(reg);
+                let new_carry = val & 0x01;
+                val >>= 1;
+                val |= new_carry << 7;
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::CARRY, new_carry != 0);
+                regs.set_flags(Flag::ZERO, val == 0);
+            }
             Rl(reg) => {
                 let mut val = regs.read_8(reg);
                 let new_carry = val >> 7;
@@ -553,8 +683,8 @@ impl Cpu {
                 val |= regs.get_flag(Flag::CARRY) as u8;
                 regs.write_8(reg, val);
                 regs.set_flags(Flag::ALL, false);
-                regs.set_flags(Flag::ZERO, val == 0);
                 regs.set_flags(Flag::CARRY, new_carry != 0);
+                regs.set_flags(Flag::ZERO, val == 0);
             }
             Rr(reg) => {
                 let mut val = regs.read_8(reg);
@@ -563,8 +693,15 @@ impl Cpu {
                 val |= (regs.get_flag(Flag::CARRY) as u8) << 7;
                 regs.write_8(reg, val);
                 regs.set_flags(Flag::ALL, false);
-                regs.set_flags(Flag::ZERO, val == 0);
                 regs.set_flags(Flag::CARRY, new_carry != 0);
+                regs.set_flags(Flag::ZERO, val == 0);
+            }
+            Swap(reg) => {
+                let mut val = regs.read_8(reg);
+                val = (val << 4) | (val >> 4);
+                regs.write_8(reg, val);
+                regs.set_flags(Flag::ALL, false);
+                regs.set_flags(Flag::ZERO, val == 0);
             }
         }
     }
