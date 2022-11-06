@@ -1,18 +1,31 @@
-use std::{env, fs};
+mod memory;
+
+use memory::{Memory, MemoryView};
+
+use std::{
+    env, fs,
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
+
+use num_traits::{PrimInt, WrappingAdd, WrappingSub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Reg8(u8);
+struct Reg<T>(u8, PhantomData<T>);
+
+type Reg8 = Reg<u8>;
+type Reg16 = Reg<u16>;
 
 #[allow(dead_code)]
 impl Reg8 {
-    const C: Self = Self(0);
-    const B: Self = Self(1);
-    const E: Self = Self(2);
-    const D: Self = Self(3);
-    const L: Self = Self(4);
-    const H: Self = Self(5);
-    const F: Self = Self(6);
-    const A: Self = Self(7);
+    const C: Self = Self(0, PhantomData);
+    const B: Self = Self(1, PhantomData);
+    const E: Self = Self(2, PhantomData);
+    const D: Self = Self(3, PhantomData);
+    const L: Self = Self(4, PhantomData);
+    const H: Self = Self(5, PhantomData);
+    const F: Self = Self(6, PhantomData);
+    const A: Self = Self(7, PhantomData);
 }
 
 impl Reg8 {
@@ -24,21 +37,18 @@ impl Reg8 {
         match bits & 0x7 {
             6 => None,
             7 => Some(Self::A),
-            bits => Some(Self(bits ^ 0x1)),
+            bits => Some(Self(bits ^ 0x1, PhantomData)),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Reg16(u8);
-
 #[allow(dead_code)]
 impl Reg16 {
-    const BC: Self = Self(0);
-    const DE: Self = Self(2);
-    const HL: Self = Self(4);
-    const AF: Self = Self(6);
-    const SP: Self = Self(8);
+    const BC: Self = Self(0, PhantomData);
+    const DE: Self = Self(1, PhantomData);
+    const HL: Self = Self(2, PhantomData);
+    const AF: Self = Self(3, PhantomData);
+    const SP: Self = Self(4, PhantomData);
 }
 
 impl Reg16 {
@@ -47,7 +57,7 @@ impl Reg16 {
     }
 
     fn from_bits(bits: u8) -> Self {
-        Self((bits & 0x3) << 1)
+        Self(bits & 0x3, PhantomData)
     }
 
     fn from_bits_sp(bits: u8) -> Self {
@@ -68,11 +78,24 @@ impl Flag {
     const HALFCARRY: u8 = 0x20;
     const CARRY: u8 = 0x10;
     const ALL: u8 = 0xf0;
+
+    fn zero(val: bool) -> u8 {
+        Self::ZERO * (val as u8)
+    }
+    fn sub(val: bool) -> u8 {
+        Self::SUB * (val as u8)
+    }
+    fn half_carry(val: bool) -> u8 {
+        Self::HALFCARRY * (val as u8)
+    }
+    fn carry(val: bool) -> u8 {
+        Self::CARRY * (val as u8)
+    }
 }
 
 #[derive(Debug, Default)]
 struct RegisterStore {
-    regs: [u8; 10],
+    regs: [u16; 5],
     // af: u16,
     // bc: u16,
     // de: u16,
@@ -80,23 +103,57 @@ struct RegisterStore {
     // sp: u16,
 }
 
+impl Index<Reg8> for RegisterStore {
+    type Output = u8;
+    fn index(&self, reg: Reg8) -> &Self::Output {
+        let i = reg.index();
+        // &self.regs[i / 2].to_le_bytes()[i % 2]
+        // &LeSlice::from(&self.regs[i / 2]).index(i % 2)
+        let reg16 = &self.regs[i / 2];
+        let reg16 = unsafe { &*(reg16 as *const u16 as *const [u8; 2]) };
+        &reg16[(i & 0x1) ^ (cfg!(target_endian = "big") as usize)]
+    }
+}
+
+impl IndexMut<Reg8> for RegisterStore {
+    fn index_mut(&mut self, reg: Reg8) -> &mut Self::Output {
+        let i = reg.index();
+        // &mut self.regs[i / 2].to_le_bytes()[i % 2]
+        // &mut LeSliceMut::from(&mut self.regs[i / 2]).index_mut(i % 2)
+        let reg16 = &mut self.regs[i / 2];
+        let reg16 = unsafe { &mut *(reg16 as *mut u16 as *mut [u8; 2]) };
+        &mut reg16[(i & 0x1) ^ (cfg!(target_endian = "big") as usize)]
+    }
+}
+
+impl Index<Reg16> for RegisterStore {
+    type Output = u16;
+    fn index(&self, reg: Reg16) -> &Self::Output {
+        &self.regs[reg.index()]
+    }
+}
+
+impl IndexMut<Reg16> for RegisterStore {
+    fn index_mut(&mut self, reg: Reg16) -> &mut Self::Output {
+        &mut self.regs[reg.index()]
+    }
+}
+
 impl RegisterStore {
     fn read_8(&self, reg: Reg8) -> u8 {
-        self.regs[reg.index()]
+        self[reg]
     }
 
     fn write_8(&mut self, reg: Reg8, val: u8) {
-        self.regs[reg.index()] = val;
+        self[reg] = val;
     }
 
     fn read_16(&self, reg: Reg16) -> u16 {
-        let i = reg.index();
-        u16::from_le_bytes(self.regs[i..i + 2].try_into().unwrap())
+        self.regs[reg.index()]
     }
 
     fn write_16(&mut self, reg: Reg16, val: u16) {
-        let i = reg.index();
-        self.regs[i..i + 2].copy_from_slice(&val.to_le_bytes());
+        self.regs[reg.index()] = val;
     }
 
     fn set_flags(&mut self, flags: u8, value: bool) {
@@ -230,6 +287,66 @@ impl Instruction {
     }
 }
 
+trait MachineValue: PrimInt + WrappingAdd + WrappingSub {
+}
+impl MachineValue for u8 {}
+impl MachineValue for u16 {}
+
+enum AddrSrc {
+    Immediate(u16),
+    Reg8(Reg<u8>),
+    Reg16(Reg<u16>),
+}
+
+impl AddrSrc {
+    fn addr(&self, regs: &RegisterStore) -> u16 {
+        match *self {
+            Self::Immediate(addr) => addr,
+            Self::Reg8(reg) => 0xff00 + regs[reg] as u16,
+            Self::Reg16(reg) => regs[reg],
+        }
+    }
+}
+
+enum Loc<T> {
+    Reg(Reg<T>),
+    Mem(AddrSrc),
+}
+
+impl<T> Loc<T>
+where
+    RegisterStore: Index<Reg<T>, Output = T> + IndexMut<Reg<T>, Output = T>,
+    Memory: MemoryView<T>,
+    T: MachineValue,
+{
+    fn read(&self, regs: &RegisterStore, memory: &Memory) -> T {
+        match self {
+            Self::Reg(reg) => regs[*reg],
+            Self::Mem(addr_src) => memory.read(addr_src.addr(regs)),
+        }
+    }
+
+    fn write(&self, regs: &mut RegisterStore, memory: &mut Memory, val: T) {
+        match self {
+            Self::Reg(reg) => regs[*reg] = val,
+            Self::Mem(addr_src) => memory.write(addr_src.addr(regs), val),
+        }
+    }
+}
+
+struct DataInst<T> {
+    src: Loc<T>,
+    dst: Loc<T>,
+    op: fn(T, T) -> (T, u8),
+    flags: u8,
+}
+
+enum Inst {
+    Nop,
+    Data8(DataInst<u8>),
+    Data16(DataInst<u16>),
+}
+
 #[derive(Debug, Default)]
 struct Cpu {
     regs: RegisterStore,
@@ -238,11 +355,41 @@ struct Cpu {
     cycles_remaining: usize,
 }
 
+mod op_impl {
+    use super::{Flag, MachineValue};
+
+    pub(super) fn inc<T: MachineValue>(dst: T, _: T) -> (T, u8) {
+        let result = dst.wrapping_add(&T::one());
+        (result, Flag::zero(result.is_zero()))
+    }
+
+    fn test<T: MachineValue>() {}
+}
+
 impl Cpu {
-    fn fetch(&mut self, memory: &[u8]) {
+    fn flags_reg(&mut self) -> &mut u8 {
+        &mut self.regs[Reg8::F]
+    }
+
+    fn apply_data_inst<T>(&mut self, inst: &DataInst<T>, mem: &mut Memory)
+    where
+        RegisterStore: Index<Reg<T>, Output = T> + IndexMut<Reg<T>, Output = T>,
+        Memory: MemoryView<T>,
+        T: MachineValue,
+    {
+        let src_val = inst.src.read(&self.regs, mem);
+        let dst_val = inst.dst.read(&self.regs, mem);
+        let (result, flags) = (inst.op)(dst_val, src_val);
+        inst.dst.write(&mut self.regs, mem, result);
+        let flags_reg = self.flags_reg();
+        *flags_reg &= !inst.flags;
+        *flags_reg |= inst.flags & flags;
+    }
+
+    fn fetch(&mut self, memory: &Memory) {
         println!("PC: {:#x}", self.pc);
 
-        let inst_mem = &memory[self.pc as usize..];
+        let inst_mem = &memory[self.pc..];
 
         fn u16(l: u8, h: u8) -> u16 {
             u16::from_le_bytes([l, h])
@@ -419,7 +566,7 @@ impl Cpu {
         self.instruction = instruction;
     }
 
-    fn execute(&mut self, memory: &mut [u8]) {
+    fn execute(&mut self, memory: &mut Memory) {
         println!("Executing: {:?}", self.instruction);
         let regs = &mut self.regs;
         use Instruction::*;
@@ -427,36 +574,36 @@ impl Cpu {
             // ========== 8080 instructions ==========
             Nop => (),
             LdRR(dst, src) => regs.write_8(dst, regs.read_8(src)),
-            LdRM(dst, src) => regs.write_8(dst, memory[regs.read_16(src) as usize]),
-            LdMR(dst, src) => memory[regs.read_16(dst) as usize] = regs.read_8(src),
+            LdRM(dst, src) => regs.write_8(dst, memory[regs.read_16(src)]),
+            LdMR(dst, src) => memory[regs.read_16(dst)] = regs.read_8(src),
             LdD8(reg, val) => regs.write_8(reg, val),
-            LdhAC => regs.write_8(Reg8::A, memory[0xff00 + regs.read_8(Reg8::C) as usize]),
+            LdhAC => regs.write_8(Reg8::A, memory[0xff00 + regs.read_8(Reg8::C) as u16]),
             LdhCA => {
-                memory[0xff00 + regs.read_8(Reg8::C) as usize] = regs.read_8(Reg8::A);
+                memory[0xff00 + regs.read_8(Reg8::C) as u16] = regs.read_8(Reg8::A);
             }
-            LdhAA8(addr) => regs.write_8(Reg8::A, memory[0xff00 + addr as usize]),
-            LdA16A(addr) => memory[addr as usize] = regs.read_8(Reg8::A),
-            LdAA16(addr) => regs.write_8(Reg8::A, memory[addr as usize]),
+            LdhAA8(addr) => regs.write_8(Reg8::A, memory[0xff00 + addr as u16]),
+            LdA16A(addr) => memory[addr] = regs.read_8(Reg8::A),
+            LdAA16(addr) => regs.write_8(Reg8::A, memory[addr]),
             LdiAHL => {
                 let addr = regs.read_16(Reg16::HL);
-                regs.write_8(Reg8::A, memory[addr as usize]);
+                regs.write_8(Reg8::A, memory[addr]);
                 regs.write_16(Reg16::HL, addr.wrapping_add(1));
             }
             LddAHL => {
                 let addr = regs.read_16(Reg16::HL);
-                regs.write_8(Reg8::A, memory[addr as usize]);
+                regs.write_8(Reg8::A, memory[addr]);
                 regs.write_16(Reg16::HL, addr.wrapping_sub(1));
             }
             LdD16(reg, val) => regs.write_16(reg, val),
-            LdhA8A(addr) => memory[0xff00 + addr as usize] = regs.read_8(Reg8::A),
+            LdhA8A(addr) => memory[0xff00 + addr as u16] = regs.read_8(Reg8::A),
             LdiHLA => {
                 let addr = regs.read_16(Reg16::HL);
-                memory[addr as usize] = regs.read_8(Reg8::A);
+                memory[addr] = regs.read_8(Reg8::A);
                 regs.write_16(Reg16::HL, addr.wrapping_add(1));
             }
             LddHLA => {
                 let addr = regs.read_16(Reg16::HL);
-                memory[addr as usize] = regs.read_8(Reg8::A);
+                memory[addr] = regs.read_8(Reg8::A);
                 regs.write_16(Reg16::HL, addr.wrapping_sub(1));
             }
             Push(reg) => {
@@ -464,7 +611,6 @@ impl Cpu {
                 let sp = regs.read_16(Reg16::SP).wrapping_sub(2);
                 regs.write_16(Reg16::SP, sp);
                 // Write the value onto the stack
-                let sp = sp as usize;
                 memory[sp..sp + 2].copy_from_slice(&regs.read_16(reg).to_le_bytes());
             }
             Pop(reg) => {
@@ -472,7 +618,6 @@ impl Cpu {
                 let sp = regs.read_16(Reg16::SP);
                 regs.write_16(Reg16::SP, sp.wrapping_add(2));
                 // Write the value into the register
-                let sp = sp as usize;
                 regs.write_16(
                     reg,
                     u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap()),
@@ -520,7 +665,15 @@ impl Cpu {
                 regs.set_flags(Flag::ZERO, val == 0);
                 regs.set_flags(Flag::SUB, true);
             }
-            Inc16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_add(1)),
+            Inc16(reg) => self.apply_data_inst(
+                &DataInst {
+                    src: Loc::Reg(reg),
+                    dst: Loc::Reg(reg),
+                    op: op_impl::inc,
+                    flags: 0,
+                },
+                memory,
+            ),
             Dec16(reg) => regs.write_16(reg, regs.read_16(reg).wrapping_sub(1)),
             AddHl(reg) => {
                 let hl = regs.read_16(Reg16::HL);
@@ -529,7 +682,7 @@ impl Cpu {
                 regs.set_flags(Flag::SUB, false);
                 regs.set_flags(Flag::HALFCARRY, (hl & 0x0fff) + (val & 0x0fff) > 0x0fff);
                 regs.set_flags(Flag::CARRY, hl.checked_add(val).is_none());
-            },
+            }
             Rlca => {
                 let mut val = regs.read_8(Reg8::A);
                 let new_carry = val >> 7;
@@ -613,7 +766,6 @@ impl Cpu {
                 let sp = regs.read_16(Reg16::SP).wrapping_sub(2);
                 regs.write_16(Reg16::SP, sp);
                 // Write the return address onto the stack
-                let sp = sp as usize;
                 memory[sp..sp + 2].copy_from_slice(&self.pc.to_le_bytes());
                 // Jump to the function address
                 self.pc = addr;
@@ -621,8 +773,7 @@ impl Cpu {
             Ret => {
                 // Read the return address from the stack and jump to it
                 let sp = regs.read_16(Reg16::SP);
-                let addr = sp as usize;
-                self.pc = u16::from_le_bytes(memory[addr..addr + 2].try_into().unwrap());
+                self.pc = u16::from_le_bytes(memory[sp..sp + 2].try_into().unwrap());
                 // Increment the stack pointer
                 regs.write_16(Reg16::SP, sp.wrapping_add(2));
             }
@@ -706,7 +857,7 @@ impl Cpu {
         }
     }
 
-    fn cycle(&mut self, memory: &mut [u8]) {
+    fn cycle(&mut self, memory: &mut Memory) {
         if self.cycles_remaining == 0 {
             self.fetch(memory);
         }
@@ -719,10 +870,9 @@ impl Cpu {
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    let mut memory = fs::read(&args[1]).unwrap();
-    memory.resize(0x10000, 0);
+    let mut memory = Memory::new(fs::read(&args[1]).unwrap());
     let mut cpu = Cpu::default();
     loop {
-        cpu.cycle(&mut memory[..]);
+        cpu.cycle(&mut memory);
     }
 }
