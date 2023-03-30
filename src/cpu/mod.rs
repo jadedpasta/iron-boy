@@ -7,7 +7,7 @@ use std::{
 
 use crate::memory::Memory;
 
-use self::instruction_set::{Instruction, InstructionEntry, Operand8, Test, Var8};
+use self::instruction_set::{Instruction, InstructionEntry, Operand8, Var8};
 
 mod alu;
 mod control;
