@@ -39,12 +39,16 @@ impl Cpu {
         }
     }
 
-    pub(super) fn call(&mut self, mem: &mut Memory) {
-        let addr = self.read_immedate_16(mem);
+    pub(super) fn call_addr(&mut self, addr: u16, mem: &mut Memory) {
         let sp = &mut self.regs[Reg16::SP];
         *sp = sp.wrapping_sub(2);
         mem.write_16(*sp, self.pc);
         self.pc = addr;
+    }
+
+    pub(super) fn call(&mut self, mem: &mut Memory) {
+        let addr = self.read_immedate_16(mem);
+        self.call_addr(addr, mem);
     }
 
     pub(super) fn call_conditional(&mut self, test: Test, cycles: usize, mem: &mut Memory) {

@@ -1,4 +1,5 @@
 mod cpu;
+mod interrupt;
 mod memory;
 mod ppu;
 

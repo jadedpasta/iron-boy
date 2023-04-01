@@ -1,4 +1,4 @@
-use crate::{memory::Memory, Cgb, FrameBuffer};
+use crate::{memory::{Memory, MappedReg}, Cgb, FrameBuffer, interrupt::Interrupt};
 
 #[derive(Debug, Default)]
 pub struct Ppu {
@@ -14,15 +14,9 @@ enum Mode {
 }
 
 impl Ppu {
-    const LY_ADDR: u16 = 0xff44;
-    const LYC_ADDR: u16 = 0xff45;
-    const STAT_ADDR: u16 = 0xff41;
-
     pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut Memory) {
         let ly = self.dot / Cgb::DOTS_PER_LINE;
         let pos = self.dot % Cgb::DOTS_PER_LINE;
-
-        mem.write_8(Self::LY_ADDR, ly as _);
 
         let mode = if ly >= Cgb::SCREEN_HEIGHT {
             Mode::VBlank
@@ -34,8 +28,12 @@ impl Ppu {
             }
         };
 
-        let stat = mode as _;
-        mem.write_8(Self::STAT_ADDR, stat);
+        mem[MappedReg::Ly] = ly as _;
+        mem[MappedReg::Stat] = mode as _;
+
+        if ly == Cgb::SCREEN_HEIGHT {
+            Interrupt::VBlank.request(mem);
+        }
 
         self.dot += 1;
         self.dot %= Cgb::DOTS_PER_FRAME;

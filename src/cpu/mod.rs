@@ -12,6 +12,7 @@ use self::instruction_set::{Instruction, InstructionEntry, Operand8, Var8};
 mod alu;
 mod control;
 mod instruction_set;
+mod interrupt;
 mod load;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -171,6 +172,8 @@ pub struct Cpu {
     regs: RegisterSet,
     cycles_remaining: usize,
     pc: u16,
+    interrupts_enabled: bool,
+    enable_interrupts_timer: usize,
 }
 
 impl Cpu {
@@ -273,9 +276,9 @@ impl Cpu {
             // Rst(u8) => (),
             Ret(None) => self.ret(mem),
             Ret(Some(test)) => self.ret_conditional(test, entry.branch_cycles, mem),
-            // Reti => (),
-            // Di => (),
-            // Ei => (),
+            Reti => self.reti(mem),
+            Di => self.ei(),
+            Ei => self.di(),
             // Halt => (),
             Stop => self.stop(mem),
             Illegal => panic!("Tried to execute illegal instruction"),
@@ -284,7 +287,7 @@ impl Cpu {
     }
 
     pub fn execute(&mut self, mem: &mut Memory) {
-        if self.cycles_remaining == 0 {
+        if self.cycles_remaining == 0 && !self.handle_interrupts(mem) {
             let start_pc = self.pc;
             let opcode = self.read_immedate_8(mem);
 
@@ -304,6 +307,7 @@ impl Cpu {
 
             self.execute_instruction(mem, &entry);
         }
+        self.update_interrupt_timer();
         self.cycles_remaining -= 1;
     }
 }
