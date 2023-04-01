@@ -47,13 +47,11 @@ impl Cgb {
                 self.cpu.execute(&mut self.memory);
             }
         }
-
     }
 
     fn into_frame_buffer_ref(buff: &mut [u8]) -> Option<&mut FrameBuffer> {
         let buff: &mut [u8; 4 * Self::SCREEN_WIDTH * Self::SCREEN_HEIGHT] = buff.try_into().ok()?;
         Some(unsafe { mem::transmute(buff) })
-        
     }
 }
 
