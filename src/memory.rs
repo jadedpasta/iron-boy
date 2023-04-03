@@ -1,4 +1,7 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    mem::{self, MaybeUninit},
+    ops::{Index, IndexMut},
+};
 
 #[allow(unused)]
 pub enum MappedReg {
@@ -62,33 +65,75 @@ pub enum MappedReg {
     Ie = 0xffff,    // Interrupt enable                          | R/W   | All
 }
 
+pub type VRam = [[u8; 0x2000]; 2];
+
 pub struct Memory {
-    mem: Box<[u8; 0x10000]>,
+    cartrige_rom: [u8; 0x8000], // TODO: MBCs
+    vram: VRam,
+    cartrige_ram: [u8; 0x2000], // TODO: MBCs
+    wram_low: [u8; 0x1000],
+    wram_high: [[u8; 0x1000]; 7],
+    // echo_ram: mirror of 0xc000~0xddff
+    oam: [u8; 0xa0],
+    // prohibited_area: 0xfea0~0xfeff
+    hram: [u8; 0x100], // HRAM and i/o registers
+}
+
+macro_rules! impl_addr_to_ref {
+    ($name:ident $( $mut:tt )?) => {
+       fn $name(& $( $mut )* self, addr: u16) -> & $( $mut )* u8 {
+           match addr {
+               0x0000..=0x7fff => & $( $mut )* self.cartrige_rom[addr as usize],
+               0x8000..=0x9fff => & $( $mut )* self.vram[{
+                   self[MappedReg::Vbk] as usize & 0x1
+               }][addr as usize & 0x1fff],
+               0xa000..=0xbfff => & $( $mut )* self.cartrige_ram[addr as usize & 0x1fff],
+               0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.wram_low[addr as usize & 0xfff],
+               0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.wram_high[{
+                   let svbk = self[MappedReg::Svbk] as usize & 0x3;
+                   if svbk == 0 { 0 } else { svbk - 1 }
+               }][addr as usize & 0xfff],
+               0xfe00..=0xfe9f => & $( $mut )* self.oam[addr as usize & 0x9f],
+               0xfea0..=0xfeff => panic!("Attempt to access illegal memory area"),
+               0xff00..=0xffff => & $( $mut )* self.hram[addr as usize & 0xff],
+           }
+       }
+    };
 }
 
 impl Memory {
-    pub fn new(mem: impl Into<Vec<u8>>) -> Self {
-        let mut mem = mem.into();
-        mem.resize(0x10000, 0);
-        Self {
-            mem: mem.into_boxed_slice().try_into().unwrap(),
-        }
+    pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
+        let mut rom = rom.into();
+        // SAFTEY: All zeros is valid for Memory, which is just a bunch of nested arrays of u8
+        let mut mem = Box::new(unsafe { MaybeUninit::<Memory>::zeroed().assume_init() });
+        rom.resize(mem::size_of_val(&mem.cartrige_rom), 0);
+        mem.cartrige_rom.copy_from_slice(&rom[..]);
+        mem
     }
 
+    pub fn vram(&self) -> &VRam {
+        &self.vram
+    }
+
+    impl_addr_to_ref!(addr_to_ref);
+    impl_addr_to_ref!(addr_to_ref_mut mut);
+
     pub fn read_8(&self, addr: u16) -> u8 {
-        self.mem[addr as usize]
+        *self.addr_to_ref(addr)
     }
 
     pub fn write_8(&mut self, addr: u16, val: u8) {
-        self.mem[addr as usize] = val
+        *self.addr_to_ref_mut(addr) = val;
     }
 
     pub fn read_16(&self, addr: u16) -> u16 {
-        u16::from_le_bytes([self.mem[addr as usize], self.mem[addr.wrapping_add(1) as usize]])
+        u16::from_le_bytes([self.read_8(addr), self.read_8(addr.wrapping_add(1))])
     }
 
     pub fn write_16(&mut self, addr: u16, val: u16) {
-        [self.mem[addr as usize], self.mem[addr.wrapping_add(1) as usize]] = val.to_le_bytes();
+        let [low, high] = val.to_le_bytes();
+        self.write_8(addr, low);
+        self.write_8(addr.wrapping_add(1), high);
     }
 }
 
@@ -96,12 +141,12 @@ impl Index<MappedReg> for Memory {
     type Output = u8;
 
     fn index(&self, reg: MappedReg) -> &Self::Output {
-        &self.mem[reg as usize]
+        self.addr_to_ref(reg as u16)
     }
 }
 
 impl IndexMut<MappedReg> for Memory {
     fn index_mut(&mut self, reg: MappedReg) -> &mut Self::Output {
-        &mut self.mem[reg as usize]
+        self.addr_to_ref_mut(reg as u16)
     }
 }

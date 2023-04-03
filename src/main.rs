@@ -16,7 +16,7 @@ use cpu::Cpu;
 use memory::Memory;
 
 struct Cgb {
-    memory: Memory,
+    memory: Box<Memory>,
     cpu: Cpu,
     ppu: Ppu,
 }

@@ -1,4 +1,8 @@
-use crate::{memory::{Memory, MappedReg}, Cgb, FrameBuffer, interrupt::Interrupt};
+use crate::{
+    interrupt::Interrupt,
+    memory::{MappedReg, Memory},
+    Cgb, FrameBuffer,
+};
 
 #[derive(Debug, Default)]
 pub struct Ppu {

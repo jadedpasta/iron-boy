@@ -1,4 +1,4 @@
-use crate::memory::{Memory, MappedReg};
+use crate::memory::{MappedReg, Memory};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Interrupt {

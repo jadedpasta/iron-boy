@@ -1,9 +1,8 @@
-use crate::memory::{Memory, MappedReg};
+use crate::memory::{MappedReg, Memory};
 
 use super::Cpu;
 
 impl Cpu {
-
     pub(super) fn ei(&mut self) {
         self.enable_interrupts_timer = 2;
     }
