@@ -66,6 +66,7 @@ pub enum MappedReg {
 }
 
 pub type VRam = [[u8; 0x2000]; 2];
+pub type PaletteRam = [u8; 64];
 
 pub struct Memory {
     cartrige_rom: [u8; 0x8000], // TODO: MBCs
@@ -77,6 +78,8 @@ pub struct Memory {
     oam: [u8; 0xa0],
     // prohibited_area: 0xfea0~0xfeff
     hram: [u8; 0x100], // HRAM and i/o registers
+    bg_palette: PaletteRam,
+    obj_palette: PaletteRam,
 }
 
 macro_rules! impl_addr_to_ref {
@@ -115,15 +118,45 @@ impl Memory {
         &self.vram
     }
 
+    pub fn bg_palette_ram(&self) -> &PaletteRam {
+        &self.bg_palette
+    }
+
+    pub fn obj_palette_ram(&self) -> &PaletteRam {
+        &self.obj_palette
+    }
+
     impl_addr_to_ref!(addr_to_ref);
     impl_addr_to_ref!(addr_to_ref_mut mut);
 
     pub fn read_8(&self, addr: u16) -> u8 {
-        *self.addr_to_ref(addr)
+        const BCPD: u16 = MappedReg::Bcpd as _;
+        const OCPD: u16 = MappedReg::Ocpd as _;
+        match addr {
+            BCPD => self.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
+            OCPD => self.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
+            _ => *self.addr_to_ref(addr),
+        }
+    }
+
+    fn auto_inc_cps(cps: &mut u8) {
+        *cps = (*cps & 0xc0) | cps.wrapping_add(*cps >> 7) & 0x3f;
     }
 
     pub fn write_8(&mut self, addr: u16, val: u8) {
-        *self.addr_to_ref_mut(addr) = val;
+        const BCPD: u16 = MappedReg::Bcpd as _;
+        const OCPD: u16 = MappedReg::Ocpd as _;
+        match addr {
+            BCPD => {
+                self.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize] = val;
+                Self::auto_inc_cps(&mut self[MappedReg::Bcps]);
+            }
+            OCPD => {
+                self.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize] = val;
+                Self::auto_inc_cps(&mut self[MappedReg::Ocps]);
+            }
+            _ => *self.addr_to_ref_mut(addr) = val,
+        }
     }
 
     pub fn read_16(&self, addr: u16) -> u16 {

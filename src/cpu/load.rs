@@ -52,7 +52,7 @@ impl Cpu {
         *hl = match inc_dec {
             HlIncDec::Inc => hl.wrapping_add(1),
             HlIncDec::Dec => hl.wrapping_sub(1),
-        }
+        };
     }
 
     pub(super) fn load_inc_dec_a(&mut self, inc_dec: HlIncDec, mem: &mut Memory) {
