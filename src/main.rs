@@ -33,7 +33,9 @@ impl Cgb {
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
 
-        Self { memory: Memory::new(rom), cpu: Cpu::default(), ppu: Ppu::default() }
+        let mut memory = Memory::new(rom);
+
+        Self { ppu: Ppu::new(&mut memory), memory, cpu: Cpu::default() }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {

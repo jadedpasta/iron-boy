@@ -103,6 +103,10 @@ impl PixelFetcher {
             Push => (),
         }
     }
+
+    fn reset(&mut self) {
+        self.state = Default::default();
+    }
 }
 
 #[derive(Debug, Default)]
@@ -123,22 +127,75 @@ impl PixelFifo {
     }
 }
 
+#[derive(Debug, Default)]
+struct PixelPipeline {
+    fetcher: PixelFetcher,
+    bg_fifo: PixelFifo,
+}
+
+impl PixelPipeline {
+    fn try_fetch_pixel(&mut self, lx: u8, mem: &Memory) -> Option<Pixel> {
+        self.fetcher.fetch(lx, &mut self.bg_fifo, mem);
+        self.bg_fifo.pop()
+    }
+
+    fn reset(&mut self) {
+        self.fetcher.reset();
+        self.bg_fifo.size = 0;
+    }
+}
+
 #[derive(Debug)]
-enum Mode {
-    HBlank = 0,
-    VBlank,
-    OamSearch,
-    Transfer,
+enum DrawState {
+    Scroll { skip_count: u8 },
+    Draw { lx: u8 },
+}
+
+impl DrawState {
+    fn lx(&self) -> u8 {
+        if let Self::Draw { lx } = self {
+            *lx
+        } else {
+            0
+        }
+    }
 }
 
 #[derive(Debug, Default)]
+#[repr(u8)]
+enum ModeState {
+    HBlank = 0,
+    VBlank,
+    #[default]
+    OamSearch,
+    Transfer(DrawState),
+}
+
+impl ModeState {
+    fn mode(&self) -> u8 {
+        // SAFETY: This is safe with repr(..) enums. Discriminant is always stored at the beginning
+        // of the allocation in this case.
+        unsafe { *(self as *const _ as *const _) }
+    }
+
+    fn start_transfer(&mut self, mem: &Memory) {
+        let scx = mem[MappedReg::Scx];
+        let skip_count = scx & 0x7;
+        let draw_state = if skip_count > 0 {
+            DrawState::Scroll { skip_count }
+        } else {
+            DrawState::Draw { lx: 0 }
+        };
+        *self = Self::Transfer(draw_state);
+    }
+}
+
+#[derive(Debug)]
 pub struct Ppu {
-    fetcher: PixelFetcher,
-    bg_fifo: PixelFifo,
-    dot: usize,
-    lx: u8,
-    skip_count: u8,
-    skip_set: bool,
+    mode_state: ModeState,
+    pipeline: PixelPipeline,
+    ly: u8,
+    line_dot: usize,
 }
 
 type Color = [u8; 2];
@@ -150,69 +207,112 @@ fn ram_to_palettes(ram: &PaletteRam) -> &Palettes {
 }
 
 impl Ppu {
-    fn draw(&mut self, ly: usize, frame_buff: &mut FrameBuffer, mem: &mut Memory) {
-        self.fetcher.fetch(self.lx, &mut self.bg_fifo, mem);
+    pub fn new(mem: &mut Memory) -> Self {
+        let mut result = Self {
+            mode_state: Default::default(),
+            pipeline: Default::default(),
+            ly: 0,
+            line_dot: 0,
+        };
+        // Registers should be given initial values on startup. Not sure how actual hardware
+        // behaves, but this is nice for an emulator.
+        result.update_control_regs(mem);
+        result
+    }
 
-        let scx = mem[MappedReg::Scx];
-
-        if self.lx == 0 && self.skip_count == 0 && !self.skip_set {
-            self.skip_set = true;
-            self.skip_count = scx & 0x7;
-        }
-
-        if let Some(pixel) = self.bg_fifo.pop() {
-            if self.skip_count > 0 {
-                self.skip_count -= 1;
-            } else {
+    fn draw(
+        ly: u8,
+        draw_state: &mut DrawState,
+        pipeline: &mut PixelPipeline,
+        frame_buff: &mut FrameBuffer,
+        mem: &Memory,
+    ) -> bool {
+        let Some(pixel) = pipeline.try_fetch_pixel(draw_state.lx(), mem) else { return false };
+        match draw_state {
+            DrawState::Scroll { skip_count } => {
+                *skip_count -= 1;
+                if *skip_count == 0 {
+                    *draw_state = DrawState::Draw { lx: 0 };
+                }
+                false
+            }
+            DrawState::Draw { lx } => {
                 let palette = ram_to_palettes(&mem.bg_palette_ram())[pixel.palette as usize];
                 let color = u16::from_le_bytes(palette[pixel.color as usize]);
                 let mask_rescale = |c| ((c & 0x1f) * 0xff / 0x1f) as u8;
                 let red = mask_rescale(color);
                 let green = mask_rescale(color >> 5);
                 let blue = mask_rescale(color >> 10);
-                frame_buff[ly][self.lx as usize] = [red, green, blue, 0xff];
-                self.lx += 1;
+                frame_buff[ly as usize][*lx as usize] = [red, green, blue, 0xff];
+                *lx += 1;
+                *lx == Cgb::SCREEN_WIDTH as u8
             }
-        }
-
-        if self.lx >= Cgb::SCREEN_WIDTH as u8 {
-            self.bg_fifo.size = 0;
-            self.skip_set = false;
         }
     }
 
+    fn start_transfer(&mut self, mem: &mut Memory) {
+        self.pipeline.reset();
+        self.mode_state.start_transfer(mem);
+    }
+
+    fn update_control_regs(&mut self, mem: &mut Memory) {
+        mem[MappedReg::Ly] = self.ly;
+        mem[MappedReg::Stat] = self.mode_state.mode();
+    }
+
     pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut Memory) {
-        let ly = self.dot / Cgb::DOTS_PER_LINE;
-        let pos = self.dot % Cgb::DOTS_PER_LINE;
-
-        mem[MappedReg::Ly] = ly as _;
-
         let lcdc = mem[MappedReg::Lcdc];
         let lcd_enabled = lcdc & 0x80 != 0;
-        if lcd_enabled {
-            let mode = if ly >= Cgb::SCREEN_HEIGHT {
-                Mode::VBlank
-            } else if self.lx >= Cgb::SCREEN_WIDTH as u8 && pos > 80 {
-                Mode::HBlank
-            } else if pos < 80 {
-                // TODO: OAM Search
-                Mode::OamSearch
-            } else {
-                if pos == 80 {
-                    self.lx = 0;
-                }
-                self.draw(ly, frame_buff, mem);
-                Mode::Transfer
-            };
 
-            if ly == Cgb::SCREEN_HEIGHT {
-                Interrupt::VBlank.request(mem);
-            }
-
-            mem[MappedReg::Stat] = mode as _;
+        if !lcd_enabled {
+            // TODO: Ideally we would do this only on the first dot after the LCD is disabled.
+            self.ly = 0;
+            self.line_dot = 0;
+            self.mode_state = ModeState::OamSearch;
+            self.pipeline.reset();
+            self.update_control_regs(mem);
+            return;
         }
 
-        self.dot += 1;
-        self.dot %= Cgb::DOTS_PER_FRAME;
+        match &mut self.mode_state {
+            ModeState::OamSearch => {
+                // TODO: OAM Search
+                self.line_dot += 1;
+                if self.line_dot == 80 {
+                    self.start_transfer(mem);
+                }
+            }
+            ModeState::Transfer(draw_state) => {
+                let scanline_completed =
+                    Self::draw(self.ly, draw_state, &mut self.pipeline, frame_buff, mem);
+                self.line_dot += 1;
+                // Assuming that we will always have at least 1 dot of HBlank, no matter what is
+                // drawn to the screen.
+                assert!(self.line_dot < Cgb::DOTS_PER_LINE);
+                if scanline_completed {
+                    self.mode_state = ModeState::HBlank;
+                }
+            }
+            blank @ (ModeState::HBlank | ModeState::VBlank) => {
+                self.line_dot += 1;
+                self.line_dot %= Cgb::DOTS_PER_LINE;
+                if self.line_dot == 0 {
+                    self.ly += 1;
+                    self.ly %= (Cgb::SCREEN_HEIGHT + Cgb::VBLANK_LINES) as u8;
+
+                    if let ModeState::HBlank = blank {
+                        self.mode_state = ModeState::OamSearch;
+                    }
+                    if self.ly == Cgb::SCREEN_HEIGHT as u8 {
+                        self.mode_state = ModeState::VBlank;
+                        Interrupt::VBlank.request(mem);
+                    } else if self.ly == 0 {
+                        self.mode_state = ModeState::OamSearch;
+                    }
+                }
+            }
+        }
+
+        self.update_control_regs(mem);
     }
 }
