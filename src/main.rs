@@ -33,11 +33,7 @@ impl Cgb {
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
 
-        Self {
-            memory: Memory::new(rom),
-            cpu: Cpu::default(),
-            ppu: Ppu::default(),
-        }
+        Self { memory: Memory::new(rom), cpu: Cpu::default(), ppu: Ppu::default() }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
@@ -80,11 +76,7 @@ fn main() {
 
     event_loop.run(move |event, _, control_flow| {
         let now = Instant::now();
-        let last = if let ControlFlow::WaitUntil(instant) = *control_flow {
-            instant
-        } else {
-            now
-        };
+        let last = if let ControlFlow::WaitUntil(instant) = *control_flow { instant } else { now };
 
         match event {
             Event::MainEventsCleared => {
@@ -100,21 +92,13 @@ fn main() {
             Event::RedrawRequested(window_id) if window_id == window.id() => {
                 pixels.render().unwrap();
             }
-            Event::WindowEvent {
-                window_id,
-                event,
-            } if window_id == window.id() => match event {
+            Event::WindowEvent { window_id, event } if window_id == window.id() => match event {
                 WindowEvent::Resized(size) => {
                     pixels.resize_surface(size.width, size.height).unwrap()
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            virtual_keycode: Some(virtual_keycode),
-                            state,
-                            ..
-                        },
+                    input: KeyboardInput { virtual_keycode: Some(virtual_keycode), state, .. },
                     ..
                 } => match (virtual_keycode, state) {
                     (VirtualKeyCode::Escape, ElementState::Released) => {

@@ -56,23 +56,15 @@ impl PixelFetcher {
                 let x = pixel_x.wrapping_add(scx) / 8;
                 let vram_addr =
                     0x1800 | ((map_area_bit as u16) << 10) | ((y as u16) << 5) | x as u16;
-                self.state = FetchTileId {
-                    vram_addr,
-                }
+                self.state = FetchTileId { vram_addr }
             }
-            FetchTileId {
-                vram_addr,
-            } => {
+            FetchTileId { vram_addr } => {
                 let vram = mem.vram();
                 self.tile_id = vram[0][vram_addr as usize];
                 self.attributes = vram[1][vram_addr as usize];
-                self.state = ComputeAddress {
-                    high: false,
-                };
+                self.state = ComputeAddress { high: false };
             }
-            ComputeAddress {
-                high,
-            } => {
+            ComputeAddress { high } => {
                 let lcdc = mem[MappedReg::Lcdc];
                 let ly = mem[MappedReg::Ly];
                 let scy = mem[MappedReg::Scy];
@@ -82,24 +74,12 @@ impl PixelFetcher {
                     | ((self.tile_id as u16) << 4)
                     | ((y_offset as u16) << 1)
                     | high as u16;
-                self.state = FetchTile {
-                    high,
-                    vram_addr,
-                };
+                self.state = FetchTile { high, vram_addr };
             }
-            FetchTile {
-                high,
-                vram_addr,
-            } => {
+            FetchTile { high, vram_addr } => {
                 let bank = (self.attributes >> 3) & 0x1;
                 self.pixel_data[high as usize] = mem.vram()[bank as usize][vram_addr as usize];
-                self.state = if high {
-                    Push
-                } else {
-                    ComputeAddress {
-                        high: true,
-                    }
-                };
+                self.state = if high { Push } else { ComputeAddress { high: true } };
             }
             Push if fifo.size == 0 => {
                 let color_low = self.pixel_data[0];

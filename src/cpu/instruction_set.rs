@@ -139,12 +139,7 @@ pub(super) struct InstructionEntry {
 }
 
 const fn new(instruction: Instruction, size: u16, cycles: usize) -> InstructionEntry {
-    InstructionEntry {
-        instruction,
-        size,
-        cycles,
-        branch_cycles: 0,
-    }
+    InstructionEntry { instruction, size, cycles, branch_cycles: 0 }
 }
 
 use Instruction::*;
@@ -183,12 +178,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Dec(Var8::Reg(Reg8::E)), 1, 1),               // 0x1d
     new(Ld(Var8::Reg(Reg8::E), Operand8::Imm), 2, 2), // 0x1e
     new(Rra, 1, 1),                                   // 0x1f
-    InstructionEntry {
-        instruction: Jr(Some(Test::Nz)),
-        size: 2,
-        cycles: 3,
-        branch_cycles: 2,
-    }, // 0x20
+    InstructionEntry { instruction: Jr(Some(Test::Nz)), size: 2, cycles: 3, branch_cycles: 2 }, // 0x20
     new(Ld16(Reg16::HL), 3, 3),                       // 0x21
     new(LdIncDecA(HlIncDec::Inc), 1, 2),              // 0x22
     new(Inc16(Reg16::HL), 1, 2),                      // 0x23
@@ -196,12 +186,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Dec(Var8::Reg(Reg8::H)), 1, 1),               // 0x25
     new(Ld(Var8::Reg(Reg8::H), Operand8::Imm), 2, 2), // 0x26
     new(Daa, 1, 1),                                   // 0x27
-    InstructionEntry {
-        instruction: Jr(Some(Test::Z)),
-        size: 2,
-        cycles: 3,
-        branch_cycles: 2,
-    }, // 0x28
+    InstructionEntry { instruction: Jr(Some(Test::Z)), size: 2, cycles: 3, branch_cycles: 2 }, // 0x28
     new(AddHl(Reg16::HL), 1, 2),                      // 0x29
     new(LdAIncDec(HlIncDec::Inc), 1, 2),              // 0x2a
     new(Dec16(Reg16::HL), 1, 2),                      // 0x2b
@@ -209,39 +194,29 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Dec(Var8::Reg(Reg8::L)), 1, 1),               // 0x2d
     new(Ld(Var8::Reg(Reg8::L), Operand8::Imm), 2, 2), // 0x2e
     new(Cpl, 1, 1),                                   // 0x2f
-    InstructionEntry {
-        instruction: Jr(Some(Test::Nc)),
-        size: 2,
-        cycles: 3,
-        branch_cycles: 2,
-    }, // 0x30
-    new(Ld16(Reg16::SP), 3, 3),                       // 0x31
-    new(LdIncDecA(HlIncDec::Dec), 1, 2),              // 0x32
-    new(Inc16(Reg16::SP), 1, 2),                      // 0x33
-    new(Inc(Var8::MemHl), 1, 3),                      // 0x34
-    new(Dec(Var8::MemHl), 1, 3),                      // 0x35
-    new(Ld(Var8::MemHl, Operand8::Imm), 2, 3),        // 0x36
-    new(Scf, 1, 1),                                   // 0x37
-    InstructionEntry {
-        instruction: Jr(Some(Test::C)),
-        size: 2,
-        cycles: 3,
-        branch_cycles: 2,
-    }, // 0x38
-    new(AddHl(Reg16::SP), 1, 2),                      // 0x39
-    new(LdAIncDec(HlIncDec::Dec), 1, 2),              // 0x3a
-    new(Dec16(Reg16::SP), 1, 2),                      // 0x3b
-    new(Inc(Var8::Reg(Reg8::A)), 1, 1),               // 0x3c
-    new(Dec(Var8::Reg(Reg8::A)), 1, 1),               // 0x3d
-    new(Ld(Var8::Reg(Reg8::A), Operand8::Imm), 2, 2), // 0x3e
-    new(Ccf, 1, 1),                                   // 0x3f
+    InstructionEntry { instruction: Jr(Some(Test::Nc)), size: 2, cycles: 3, branch_cycles: 2 }, // 0x30
+    new(Ld16(Reg16::SP), 3, 3),                // 0x31
+    new(LdIncDecA(HlIncDec::Dec), 1, 2),       // 0x32
+    new(Inc16(Reg16::SP), 1, 2),               // 0x33
+    new(Inc(Var8::MemHl), 1, 3),               // 0x34
+    new(Dec(Var8::MemHl), 1, 3),               // 0x35
+    new(Ld(Var8::MemHl, Operand8::Imm), 2, 3), // 0x36
+    new(Scf, 1, 1),                            // 0x37
+    InstructionEntry { instruction: Jr(Some(Test::C)), size: 2, cycles: 3, branch_cycles: 2 }, // 0x38
+    new(AddHl(Reg16::SP), 1, 2),                                   // 0x39
+    new(LdAIncDec(HlIncDec::Dec), 1, 2),                           // 0x3a
+    new(Dec16(Reg16::SP), 1, 2),                                   // 0x3b
+    new(Inc(Var8::Reg(Reg8::A)), 1, 1),                            // 0x3c
+    new(Dec(Var8::Reg(Reg8::A)), 1, 1),                            // 0x3d
+    new(Ld(Var8::Reg(Reg8::A), Operand8::Imm), 2, 2),              // 0x3e
+    new(Ccf, 1, 1),                                                // 0x3f
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::B)), 1, 1), // 0x40
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::C)), 1, 1), // 0x41
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::D)), 1, 1), // 0x42
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::E)), 1, 1), // 0x43
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::H)), 1, 1), // 0x44
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::L)), 1, 1), // 0x45
-    new(Ld(Var8::Reg(Reg8::B), Operand8::new_mem()), 1, 2), // 0x46
+    new(Ld(Var8::Reg(Reg8::B), Operand8::new_mem()), 1, 2),        // 0x46
     new(Ld(Var8::Reg(Reg8::B), Operand8::new_reg(Reg8::A)), 1, 1), // 0x47
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::B)), 1, 1), // 0x48
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::C)), 1, 1), // 0x49
@@ -249,7 +224,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::E)), 1, 1), // 0x4b
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::H)), 1, 1), // 0x4c
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::L)), 1, 1), // 0x4d
-    new(Ld(Var8::Reg(Reg8::C), Operand8::new_mem()), 1, 2), // 0x4e
+    new(Ld(Var8::Reg(Reg8::C), Operand8::new_mem()), 1, 2),        // 0x4e
     new(Ld(Var8::Reg(Reg8::C), Operand8::new_reg(Reg8::A)), 1, 1), // 0x4f
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::B)), 1, 1), // 0x50
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::C)), 1, 1), // 0x51
@@ -257,7 +232,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::E)), 1, 1), // 0x53
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::H)), 1, 1), // 0x54
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::L)), 1, 1), // 0x55
-    new(Ld(Var8::Reg(Reg8::D), Operand8::new_mem()), 1, 2), // 0x56
+    new(Ld(Var8::Reg(Reg8::D), Operand8::new_mem()), 1, 2),        // 0x56
     new(Ld(Var8::Reg(Reg8::D), Operand8::new_reg(Reg8::A)), 1, 1), // 0x57
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::B)), 1, 1), // 0x58
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::C)), 1, 1), // 0x59
@@ -265,7 +240,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::E)), 1, 1), // 0x5b
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::H)), 1, 1), // 0x5c
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::L)), 1, 1), // 0x5d
-    new(Ld(Var8::Reg(Reg8::E), Operand8::new_mem()), 1, 2), // 0x5e
+    new(Ld(Var8::Reg(Reg8::E), Operand8::new_mem()), 1, 2),        // 0x5e
     new(Ld(Var8::Reg(Reg8::E), Operand8::new_reg(Reg8::A)), 1, 1), // 0x5f
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::B)), 1, 1), // 0x60
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::C)), 1, 1), // 0x61
@@ -273,7 +248,7 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::E)), 1, 1), // 0x63
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::H)), 1, 1), // 0x64
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::L)), 1, 1), // 0x65
-    new(Ld(Var8::Reg(Reg8::H), Operand8::new_mem()), 1, 2), // 0x66
+    new(Ld(Var8::Reg(Reg8::H), Operand8::new_mem()), 1, 2),        // 0x66
     new(Ld(Var8::Reg(Reg8::H), Operand8::new_reg(Reg8::A)), 1, 1), // 0x67
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::B)), 1, 1), // 0x68
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::C)), 1, 1), // 0x69
@@ -281,212 +256,152 @@ const OP_TABLE: [InstructionEntry; 0x100] = [
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::E)), 1, 1), // 0x6b
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::H)), 1, 1), // 0x6c
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::L)), 1, 1), // 0x6d
-    new(Ld(Var8::Reg(Reg8::L), Operand8::new_mem()), 1, 2), // 0x6e
+    new(Ld(Var8::Reg(Reg8::L), Operand8::new_mem()), 1, 2),        // 0x6e
     new(Ld(Var8::Reg(Reg8::L), Operand8::new_reg(Reg8::A)), 1, 1), // 0x6f
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::B)), 1, 2), // 0x70
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::C)), 1, 2), // 0x71
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::D)), 1, 2), // 0x72
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::E)), 1, 2), // 0x73
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::H)), 1, 2), // 0x74
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::L)), 1, 2), // 0x75
-    new(Halt, 1, 1),                                  // 0x76
-    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::A)), 1, 2), // 0x77
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::B)), 1, 2),        // 0x70
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::C)), 1, 2),        // 0x71
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::D)), 1, 2),        // 0x72
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::E)), 1, 2),        // 0x73
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::H)), 1, 2),        // 0x74
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::L)), 1, 2),        // 0x75
+    new(Halt, 1, 1),                                               // 0x76
+    new(Ld(Var8::MemHl, Operand8::new_reg(Reg8::A)), 1, 2),        // 0x77
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::B)), 1, 1), // 0x78
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::C)), 1, 1), // 0x79
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::D)), 1, 1), // 0x7a
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::E)), 1, 1), // 0x7b
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::H)), 1, 1), // 0x7c
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::L)), 1, 1), // 0x7d
-    new(Ld(Var8::Reg(Reg8::A), Operand8::new_mem()), 1, 2), // 0x7e
+    new(Ld(Var8::Reg(Reg8::A), Operand8::new_mem()), 1, 2),        // 0x7e
     new(Ld(Var8::Reg(Reg8::A), Operand8::new_reg(Reg8::A)), 1, 1), // 0x7f
-    new(Add(Operand8::new_reg(Reg8::B)), 1, 1),       // 0x80
-    new(Add(Operand8::new_reg(Reg8::C)), 1, 1),       // 0x81
-    new(Add(Operand8::new_reg(Reg8::D)), 1, 1),       // 0x82
-    new(Add(Operand8::new_reg(Reg8::E)), 1, 1),       // 0x83
-    new(Add(Operand8::new_reg(Reg8::H)), 1, 1),       // 0x84
-    new(Add(Operand8::new_reg(Reg8::L)), 1, 1),       // 0x85
-    new(Add(Operand8::new_mem()), 1, 2),              // 0x86
-    new(Add(Operand8::new_reg(Reg8::A)), 1, 1),       // 0x87
-    new(Adc(Operand8::new_reg(Reg8::B)), 1, 1),       // 0x88
-    new(Adc(Operand8::new_reg(Reg8::C)), 1, 1),       // 0x89
-    new(Adc(Operand8::new_reg(Reg8::D)), 1, 1),       // 0x8a
-    new(Adc(Operand8::new_reg(Reg8::E)), 1, 1),       // 0x8b
-    new(Adc(Operand8::new_reg(Reg8::H)), 1, 1),       // 0x8c
-    new(Adc(Operand8::new_reg(Reg8::L)), 1, 1),       // 0x8d
-    new(Adc(Operand8::new_mem()), 1, 2),              // 0x8e
-    new(Adc(Operand8::new_reg(Reg8::A)), 1, 1),       // 0x8f
-    new(Sub(Operand8::new_reg(Reg8::B)), 1, 1),       // 0x90
-    new(Sub(Operand8::new_reg(Reg8::C)), 1, 1),       // 0x91
-    new(Sub(Operand8::new_reg(Reg8::D)), 1, 1),       // 0x92
-    new(Sub(Operand8::new_reg(Reg8::E)), 1, 1),       // 0x93
-    new(Sub(Operand8::new_reg(Reg8::H)), 1, 1),       // 0x94
-    new(Sub(Operand8::new_reg(Reg8::L)), 1, 1),       // 0x95
-    new(Sub(Operand8::new_mem()), 1, 2),              // 0x96
-    new(Sub(Operand8::new_reg(Reg8::A)), 1, 1),       // 0x97
-    new(Sbc(Operand8::new_reg(Reg8::B)), 1, 1),       // 0x98
-    new(Sbc(Operand8::new_reg(Reg8::C)), 1, 1),       // 0x99
-    new(Sbc(Operand8::new_reg(Reg8::D)), 1, 1),       // 0x9a
-    new(Sbc(Operand8::new_reg(Reg8::E)), 1, 1),       // 0x9b
-    new(Sbc(Operand8::new_reg(Reg8::H)), 1, 1),       // 0x9c
-    new(Sbc(Operand8::new_reg(Reg8::L)), 1, 1),       // 0x9d
-    new(Sbc(Operand8::new_mem()), 1, 2),              // 0x9e
-    new(Sbc(Operand8::new_reg(Reg8::A)), 1, 1),       // 0x9f
-    new(And(Operand8::new_reg(Reg8::B)), 1, 1),       // 0xa0
-    new(And(Operand8::new_reg(Reg8::C)), 1, 1),       // 0xa1
-    new(And(Operand8::new_reg(Reg8::D)), 1, 1),       // 0xa2
-    new(And(Operand8::new_reg(Reg8::E)), 1, 1),       // 0xa3
-    new(And(Operand8::new_reg(Reg8::H)), 1, 1),       // 0xa4
-    new(And(Operand8::new_reg(Reg8::L)), 1, 1),       // 0xa5
-    new(And(Operand8::new_mem()), 1, 2),              // 0xa6
-    new(And(Operand8::new_reg(Reg8::A)), 1, 1),       // 0xa7
-    new(Xor(Operand8::new_reg(Reg8::B)), 1, 1),       // 0xa8
-    new(Xor(Operand8::new_reg(Reg8::C)), 1, 1),       // 0xa9
-    new(Xor(Operand8::new_reg(Reg8::D)), 1, 1),       // 0xaa
-    new(Xor(Operand8::new_reg(Reg8::E)), 1, 1),       // 0xab
-    new(Xor(Operand8::new_reg(Reg8::H)), 1, 1),       // 0xac
-    new(Xor(Operand8::new_reg(Reg8::L)), 1, 1),       // 0xad
-    new(Xor(Operand8::new_mem()), 1, 2),              // 0xae
-    new(Xor(Operand8::new_reg(Reg8::A)), 1, 1),       // 0xaf
-    new(Or(Operand8::new_reg(Reg8::B)), 1, 1),        // 0xb0
-    new(Or(Operand8::new_reg(Reg8::C)), 1, 1),        // 0xb1
-    new(Or(Operand8::new_reg(Reg8::D)), 1, 1),        // 0xb2
-    new(Or(Operand8::new_reg(Reg8::E)), 1, 1),        // 0xb3
-    new(Or(Operand8::new_reg(Reg8::H)), 1, 1),        // 0xb4
-    new(Or(Operand8::new_reg(Reg8::L)), 1, 1),        // 0xb5
-    new(Or(Operand8::new_mem()), 1, 2),               // 0xb6
-    new(Or(Operand8::new_reg(Reg8::A)), 1, 1),        // 0xb7
-    new(Cp(Operand8::new_reg(Reg8::B)), 1, 1),        // 0xb8
-    new(Cp(Operand8::new_reg(Reg8::C)), 1, 1),        // 0xb9
-    new(Cp(Operand8::new_reg(Reg8::D)), 1, 1),        // 0xba
-    new(Cp(Operand8::new_reg(Reg8::E)), 1, 1),        // 0xbb
-    new(Cp(Operand8::new_reg(Reg8::H)), 1, 1),        // 0xbc
-    new(Cp(Operand8::new_reg(Reg8::L)), 1, 1),        // 0xbd
-    new(Cp(Operand8::new_mem()), 1, 2),               // 0xbe
-    new(Cp(Operand8::new_reg(Reg8::A)), 1, 1),        // 0xbf
-    InstructionEntry {
-        instruction: Ret(Some(Test::Nz)),
-        size: 1,
-        cycles: 5,
-        branch_cycles: 2,
-    }, // 0xc0
-    new(Pop(Reg16::BC), 1, 3),                        // 0xc1
-    InstructionEntry {
-        instruction: Jp(Some(Test::Nz)),
-        size: 3,
-        cycles: 4,
-        branch_cycles: 3,
-    }, // 0xc2
-    new(Jp(None), 3, 4),                              // 0xc3
-    InstructionEntry {
-        instruction: Call(Some(Test::Nz)),
-        size: 3,
-        cycles: 6,
-        branch_cycles: 3,
-    }, // 0xc4
-    new(Push(Reg16::BC), 1, 4),                       // 0xc5
-    new(Add(Operand8::Imm), 2, 2),                    // 0xc6
-    new(Rst(0x00), 1, 4),                             // 0xc7
-    InstructionEntry {
-        instruction: Ret(Some(Test::Z)),
-        size: 1,
-        cycles: 5,
-        branch_cycles: 2,
-    }, // 0xc8
-    new(Ret(None), 1, 4),                             // 0xc9
-    InstructionEntry {
-        instruction: Jp(Some(Test::Z)),
-        size: 3,
-        cycles: 4,
-        branch_cycles: 3,
-    }, // 0xca
-    new(Illegal, 1, 1),                               // 0xcb
-    InstructionEntry {
-        instruction: Call(Some(Test::Z)),
-        size: 3,
-        cycles: 6,
-        branch_cycles: 3,
-    }, // 0xcc
-    new(Call(None), 3, 6),                            // 0xcd
-    new(Adc(Operand8::Imm), 2, 2),                    // 0xce
-    new(Rst(0x08), 1, 4),                             // 0xcf
-    InstructionEntry {
-        instruction: Ret(Some(Test::Nc)),
-        size: 1,
-        cycles: 5,
-        branch_cycles: 2,
-    }, // 0xd0
-    new(Pop(Reg16::DE), 1, 3),                        // 0xd1
-    InstructionEntry {
-        instruction: Jp(Some(Test::Nc)),
-        size: 3,
-        cycles: 4,
-        branch_cycles: 3,
-    }, // 0xd2
-    new(Illegal, 1, 1),                               // 0xd3
-    InstructionEntry {
-        instruction: Call(Some(Test::Nc)),
-        size: 3,
-        cycles: 6,
-        branch_cycles: 3,
-    }, // 0xd4
-    new(Push(Reg16::DE), 1, 4),                       // 0xd5
-    new(Sub(Operand8::Imm), 2, 2),                    // 0xd6
-    new(Rst(0x10), 1, 4),                             // 0xd7
-    InstructionEntry {
-        instruction: Ret(Some(Test::C)),
-        size: 1,
-        cycles: 5,
-        branch_cycles: 2,
-    }, // 0xd8
-    new(Reti, 1, 4),                                  // 0xd9
-    InstructionEntry {
-        instruction: Jp(Some(Test::C)),
-        size: 3,
-        cycles: 4,
-        branch_cycles: 3,
-    }, // 0xda
-    new(Illegal, 1, 1),                               // 0xdb
-    InstructionEntry {
-        instruction: Call(Some(Test::C)),
-        size: 3,
-        cycles: 6,
-        branch_cycles: 3,
-    }, // 0xdc
-    new(Illegal, 1, 1),                               // 0xdd
-    new(Sbc(Operand8::Imm), 2, 2),                    // 0xde
-    new(Rst(0x18), 1, 4),                             // 0xdf
-    new(LdhMemA, 2, 3),                               // 0xe0
-    new(Pop(Reg16::HL), 1, 3),                        // 0xe1
-    new(LdhMemCA, 1, 2),                              // 0xe2
-    new(Illegal, 1, 1),                               // 0xe3
-    new(Illegal, 1, 1),                               // 0xe4
-    new(Push(Reg16::HL), 1, 4),                       // 0xe5
-    new(And(Operand8::Imm), 2, 2),                    // 0xe6
-    new(Rst(0x20), 1, 4),                             // 0xe7
-    new(AddSp, 2, 4),                                 // 0xe8
-    new(JpHl, 1, 1),                                  // 0xe9
-    new(LdMem16A, 3, 4),                              // 0xea
-    new(Illegal, 1, 1),                               // 0xeb
-    new(Illegal, 1, 1),                               // 0xec
-    new(Illegal, 1, 1),                               // 0xed
-    new(Xor(Operand8::Imm), 2, 2),                    // 0xee
-    new(Rst(0x28), 1, 4),                             // 0xef
-    new(LdhAMem, 2, 3),                               // 0xf0
-    new(Pop(Reg16::AF), 1, 1),                        // 0xf1
-    new(LdhAMemC, 1, 2),                              // 0xf2
-    new(Di, 1, 1),                                    // 0xf3
-    new(Illegal, 1, 1),                               // 0xf4
-    new(Push(Reg16::AF), 1, 4),                       // 0xf5
-    new(Or(Operand8::Imm), 2, 2),                     // 0xf6
-    new(Rst(0x30), 1, 4),                             // 0xf7
-    new(LdHlSpInc, 2, 3),                             // 0xf8
-    new(LdSpHl, 1, 2),                                // 0xf9
-    new(LdAMem16, 3, 4),                              // 0xfa
-    new(Ei, 1, 1),                                    // 0xfb
-    new(Illegal, 1, 1),                               // 0xfc
-    new(Illegal, 1, 1),                               // 0xfd
-    new(Cp(Operand8::Imm), 2, 2),                     // 0xfe
-    new(Rst(0x38), 1, 4),                             // 0xff
+    new(Add(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0x80
+    new(Add(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0x81
+    new(Add(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0x82
+    new(Add(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0x83
+    new(Add(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0x84
+    new(Add(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0x85
+    new(Add(Operand8::new_mem()), 1, 2),                           // 0x86
+    new(Add(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0x87
+    new(Adc(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0x88
+    new(Adc(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0x89
+    new(Adc(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0x8a
+    new(Adc(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0x8b
+    new(Adc(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0x8c
+    new(Adc(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0x8d
+    new(Adc(Operand8::new_mem()), 1, 2),                           // 0x8e
+    new(Adc(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0x8f
+    new(Sub(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0x90
+    new(Sub(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0x91
+    new(Sub(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0x92
+    new(Sub(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0x93
+    new(Sub(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0x94
+    new(Sub(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0x95
+    new(Sub(Operand8::new_mem()), 1, 2),                           // 0x96
+    new(Sub(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0x97
+    new(Sbc(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0x98
+    new(Sbc(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0x99
+    new(Sbc(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0x9a
+    new(Sbc(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0x9b
+    new(Sbc(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0x9c
+    new(Sbc(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0x9d
+    new(Sbc(Operand8::new_mem()), 1, 2),                           // 0x9e
+    new(Sbc(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0x9f
+    new(And(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0xa0
+    new(And(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0xa1
+    new(And(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0xa2
+    new(And(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0xa3
+    new(And(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0xa4
+    new(And(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0xa5
+    new(And(Operand8::new_mem()), 1, 2),                           // 0xa6
+    new(And(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0xa7
+    new(Xor(Operand8::new_reg(Reg8::B)), 1, 1),                    // 0xa8
+    new(Xor(Operand8::new_reg(Reg8::C)), 1, 1),                    // 0xa9
+    new(Xor(Operand8::new_reg(Reg8::D)), 1, 1),                    // 0xaa
+    new(Xor(Operand8::new_reg(Reg8::E)), 1, 1),                    // 0xab
+    new(Xor(Operand8::new_reg(Reg8::H)), 1, 1),                    // 0xac
+    new(Xor(Operand8::new_reg(Reg8::L)), 1, 1),                    // 0xad
+    new(Xor(Operand8::new_mem()), 1, 2),                           // 0xae
+    new(Xor(Operand8::new_reg(Reg8::A)), 1, 1),                    // 0xaf
+    new(Or(Operand8::new_reg(Reg8::B)), 1, 1),                     // 0xb0
+    new(Or(Operand8::new_reg(Reg8::C)), 1, 1),                     // 0xb1
+    new(Or(Operand8::new_reg(Reg8::D)), 1, 1),                     // 0xb2
+    new(Or(Operand8::new_reg(Reg8::E)), 1, 1),                     // 0xb3
+    new(Or(Operand8::new_reg(Reg8::H)), 1, 1),                     // 0xb4
+    new(Or(Operand8::new_reg(Reg8::L)), 1, 1),                     // 0xb5
+    new(Or(Operand8::new_mem()), 1, 2),                            // 0xb6
+    new(Or(Operand8::new_reg(Reg8::A)), 1, 1),                     // 0xb7
+    new(Cp(Operand8::new_reg(Reg8::B)), 1, 1),                     // 0xb8
+    new(Cp(Operand8::new_reg(Reg8::C)), 1, 1),                     // 0xb9
+    new(Cp(Operand8::new_reg(Reg8::D)), 1, 1),                     // 0xba
+    new(Cp(Operand8::new_reg(Reg8::E)), 1, 1),                     // 0xbb
+    new(Cp(Operand8::new_reg(Reg8::H)), 1, 1),                     // 0xbc
+    new(Cp(Operand8::new_reg(Reg8::L)), 1, 1),                     // 0xbd
+    new(Cp(Operand8::new_mem()), 1, 2),                            // 0xbe
+    new(Cp(Operand8::new_reg(Reg8::A)), 1, 1),                     // 0xbf
+    InstructionEntry { instruction: Ret(Some(Test::Nz)), size: 1, cycles: 5, branch_cycles: 2 }, // 0xc0
+    new(Pop(Reg16::BC), 1, 3), // 0xc1
+    InstructionEntry { instruction: Jp(Some(Test::Nz)), size: 3, cycles: 4, branch_cycles: 3 }, // 0xc2
+    new(Jp(None), 3, 4), // 0xc3
+    InstructionEntry { instruction: Call(Some(Test::Nz)), size: 3, cycles: 6, branch_cycles: 3 }, // 0xc4
+    new(Push(Reg16::BC), 1, 4),    // 0xc5
+    new(Add(Operand8::Imm), 2, 2), // 0xc6
+    new(Rst(0x00), 1, 4),          // 0xc7
+    InstructionEntry { instruction: Ret(Some(Test::Z)), size: 1, cycles: 5, branch_cycles: 2 }, // 0xc8
+    new(Ret(None), 1, 4), // 0xc9
+    InstructionEntry { instruction: Jp(Some(Test::Z)), size: 3, cycles: 4, branch_cycles: 3 }, // 0xca
+    new(Illegal, 1, 1), // 0xcb
+    InstructionEntry { instruction: Call(Some(Test::Z)), size: 3, cycles: 6, branch_cycles: 3 }, // 0xcc
+    new(Call(None), 3, 6),         // 0xcd
+    new(Adc(Operand8::Imm), 2, 2), // 0xce
+    new(Rst(0x08), 1, 4),          // 0xcf
+    InstructionEntry { instruction: Ret(Some(Test::Nc)), size: 1, cycles: 5, branch_cycles: 2 }, // 0xd0
+    new(Pop(Reg16::DE), 1, 3), // 0xd1
+    InstructionEntry { instruction: Jp(Some(Test::Nc)), size: 3, cycles: 4, branch_cycles: 3 }, // 0xd2
+    new(Illegal, 1, 1), // 0xd3
+    InstructionEntry { instruction: Call(Some(Test::Nc)), size: 3, cycles: 6, branch_cycles: 3 }, // 0xd4
+    new(Push(Reg16::DE), 1, 4),    // 0xd5
+    new(Sub(Operand8::Imm), 2, 2), // 0xd6
+    new(Rst(0x10), 1, 4),          // 0xd7
+    InstructionEntry { instruction: Ret(Some(Test::C)), size: 1, cycles: 5, branch_cycles: 2 }, // 0xd8
+    new(Reti, 1, 4), // 0xd9
+    InstructionEntry { instruction: Jp(Some(Test::C)), size: 3, cycles: 4, branch_cycles: 3 }, // 0xda
+    new(Illegal, 1, 1), // 0xdb
+    InstructionEntry { instruction: Call(Some(Test::C)), size: 3, cycles: 6, branch_cycles: 3 }, // 0xdc
+    new(Illegal, 1, 1),            // 0xdd
+    new(Sbc(Operand8::Imm), 2, 2), // 0xde
+    new(Rst(0x18), 1, 4),          // 0xdf
+    new(LdhMemA, 2, 3),            // 0xe0
+    new(Pop(Reg16::HL), 1, 3),     // 0xe1
+    new(LdhMemCA, 1, 2),           // 0xe2
+    new(Illegal, 1, 1),            // 0xe3
+    new(Illegal, 1, 1),            // 0xe4
+    new(Push(Reg16::HL), 1, 4),    // 0xe5
+    new(And(Operand8::Imm), 2, 2), // 0xe6
+    new(Rst(0x20), 1, 4),          // 0xe7
+    new(AddSp, 2, 4),              // 0xe8
+    new(JpHl, 1, 1),               // 0xe9
+    new(LdMem16A, 3, 4),           // 0xea
+    new(Illegal, 1, 1),            // 0xeb
+    new(Illegal, 1, 1),            // 0xec
+    new(Illegal, 1, 1),            // 0xed
+    new(Xor(Operand8::Imm), 2, 2), // 0xee
+    new(Rst(0x28), 1, 4),          // 0xef
+    new(LdhAMem, 2, 3),            // 0xf0
+    new(Pop(Reg16::AF), 1, 1),     // 0xf1
+    new(LdhAMemC, 1, 2),           // 0xf2
+    new(Di, 1, 1),                 // 0xf3
+    new(Illegal, 1, 1),            // 0xf4
+    new(Push(Reg16::AF), 1, 4),    // 0xf5
+    new(Or(Operand8::Imm), 2, 2),  // 0xf6
+    new(Rst(0x30), 1, 4),          // 0xf7
+    new(LdHlSpInc, 2, 3),          // 0xf8
+    new(LdSpHl, 1, 2),             // 0xf9
+    new(LdAMem16, 3, 4),           // 0xfa
+    new(Ei, 1, 1),                 // 0xfb
+    new(Illegal, 1, 1),            // 0xfc
+    new(Illegal, 1, 1),            // 0xfd
+    new(Cp(Operand8::Imm), 2, 2),  // 0xfe
+    new(Rst(0x38), 1, 4),          // 0xff
 ];
 
 pub(super) fn entry_for_prefix_opcode(opcode: u8) -> InstructionEntry {
