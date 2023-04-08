@@ -126,6 +126,21 @@ impl Memory {
         &self.obj_palette
     }
 
+    #[cfg(test)]
+    pub fn vram_mut(&mut self) -> &mut VRam {
+        &mut self.vram
+    }
+
+    #[cfg(test)]
+    pub fn bg_palette_ram_mut(&mut self) -> &mut PaletteRam {
+        &mut self.bg_palette
+    }
+
+    #[cfg(test)]
+    pub fn obj_palette_ram_mut(&mut self) -> &mut PaletteRam {
+        &mut self.obj_palette
+    }
+
     impl_addr_to_ref!(addr_to_ref);
     impl_addr_to_ref!(addr_to_ref_mut mut);
 

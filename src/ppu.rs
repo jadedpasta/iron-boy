@@ -316,3 +316,101 @@ impl Ppu {
         self.update_control_regs(mem);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{iter::repeat, mem::MaybeUninit};
+
+    use crate::memory::VRam;
+
+    use super::*;
+
+    struct Context {
+        ppu: Ppu,
+        mem: Box<Memory>,
+        frame_buff: FrameBuffer,
+    }
+
+    impl Context {
+        fn new(vram_init: impl FnOnce(&mut VRam)) -> Self {
+            let mut mem = Memory::new([]);
+            vram_init(mem.vram_mut());
+            let bg_palette_ram = mem.bg_palette_ram_mut();
+            let palette: Vec<u8> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]
+                .into_iter()
+                .flat_map(u16::to_le_bytes)
+                .collect();
+            bg_palette_ram[0..8].copy_from_slice(&palette);
+            mem[MappedReg::Lcdc] = 0x90;
+            Self {
+                ppu: Ppu::new(&mut mem),
+                mem,
+                frame_buff: unsafe { MaybeUninit::zeroed().assume_init() },
+            }
+        }
+
+        fn draw_frame(&mut self) {
+            for _ in 0..Cgb::DOTS_PER_FRAME {
+                self.ppu.execute(&mut self.frame_buff, &mut self.mem);
+            }
+        }
+
+        fn assert_frame(&self, mut pixel_func: impl FnMut(u8, u8) -> [u8; 3]) {
+            for (y, (x, pixel)) in self
+                .frame_buff
+                .iter()
+                .enumerate()
+                .flat_map(|(y, row)| repeat(y).zip(row.iter().enumerate()))
+            {
+                let [r, g, b] = pixel_func(x as u8, y as u8);
+                assert_eq!(pixel, &[r, g, b, 0xff], "pos: ({x}, {y})");
+            }
+        }
+    }
+
+    fn checkerboard_vram_init(vram: &mut VRam) {
+        vram[0][0..16].copy_from_slice(&[0xff; 16]);
+        vram[0][16..32].copy_from_slice(&[0x00; 16]);
+        for (y, x) in (0..32).flat_map(|y| repeat(y).zip(0..32)) {
+            let addr = 0x1800 + 32 * y + x;
+            vram[0][addr] = if x & 0x1 == y & 0x1 { 0x00 } else { 0x01 };
+            vram[1][addr] = 0x00;
+        }
+    }
+
+    #[test]
+    fn test_scroll_x() {
+        let mut ctx = Context::new(checkerboard_vram_init);
+        for scx in 0..=255 {
+            ctx.mem[MappedReg::Scx] = scx;
+            ctx.draw_frame();
+            ctx.assert_frame(|x, y| {
+                let tile_x = x.wrapping_add(scx) / 8;
+                let tile_y = y / 8;
+                if tile_x & 0x1 == tile_y & 0x1 {
+                    [0xff, 0x00, 0x00]
+                } else {
+                    [0xff, 0xff, 0xff]
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn test_scroll_y() {
+        let mut ctx = Context::new(checkerboard_vram_init);
+        for scy in 0..=255 {
+            ctx.mem[MappedReg::Scy] = scy;
+            ctx.draw_frame();
+            ctx.assert_frame(|x, y| {
+                let tile_x = x / 8;
+                let tile_y = y.wrapping_add(scy) / 8;
+                if tile_x & 0x1 == tile_y & 0x1 {
+                    [0xff, 0x00, 0x00]
+                } else {
+                    [0xff, 0xff, 0xff]
+                }
+            });
+        }
+    }
+}
