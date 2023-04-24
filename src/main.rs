@@ -3,7 +3,8 @@ mod interrupt;
 mod memory;
 mod ppu;
 
-use pixels::{Pixels, SurfaceTexture};
+use pixels::wgpu::TextureFormat;
+use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use ppu::Ppu;
 use std::time::{Duration, Instant};
 use std::{env, fs, mem};
@@ -73,7 +74,11 @@ fn main() {
     let mut pixels = {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        Pixels::new(Cgb::SCREEN_WIDTH as u32, Cgb::SCREEN_HEIGHT as u32, surface_texture).unwrap()
+        PixelsBuilder::new(Cgb::SCREEN_WIDTH as u32, Cgb::SCREEN_HEIGHT as u32, surface_texture)
+            .texture_format(TextureFormat::Rgba8Unorm)
+            .surface_texture_format(TextureFormat::Bgra8Unorm)
+            .build()
+            .unwrap()
     };
 
     event_loop.run(move |event, _, control_flow| {
