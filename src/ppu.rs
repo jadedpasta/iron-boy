@@ -7,195 +7,30 @@ use crate::{
 };
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Pixel {
-    color: u8,
-    palette: u8,
-    obj: Option<u8>,
-    priority: u8,
-}
-
-#[derive(Debug, Default)]
-enum PixelFetcherState {
-    #[default]
-    ComputeTileAddress,
-    FetchTileId {
-        vram_addr: u16,
-    },
-    ComputeAddress {
-        high: bool,
-    },
-    FetchTile {
-        high: bool,
-        vram_addr: u16,
-    },
-    Push,
-}
-
-#[derive(Debug, Default)]
-struct PixelFetcher {
-    state: PixelFetcherState,
-    tile_id: u8,
-    attributes: u8,
-    pixel_data: [u8; 2],
-}
-
-impl PixelFetcher {
-    fn fetch(&mut self, lx: u8, fifo: &mut PixelFifo, mem: &Memory) {
-        // We may have pixels already in the FIFO. Fetch the pixels that come next, not at the
-        // location of the current pixel to be shifted out.
-        let pixel_x = lx + fifo.size as u8;
-        use PixelFetcherState::*;
-        match self.state {
-            ComputeTileAddress => {
-                let lcdc = mem[MappedReg::Lcdc];
-                let ly = mem[MappedReg::Ly];
-                let scy = mem[MappedReg::Scy];
-                let scx = mem[MappedReg::Scx];
-                let map_area_bit = (lcdc >> 3) & 0x1;
-                let y = ly.wrapping_add(scy) / 8;
-                let x = pixel_x.wrapping_add(scx) / 8;
-                let vram_addr =
-                    0x1800 | ((map_area_bit as u16) << 10) | ((y as u16) << 5) | x as u16;
-                self.state = FetchTileId { vram_addr }
-            }
-            FetchTileId { vram_addr } => {
-                let vram = mem.vram();
-                self.tile_id = vram[0][vram_addr as usize];
-                self.attributes = vram[1][vram_addr as usize];
-                self.state = ComputeAddress { high: false };
-            }
-            ComputeAddress { high } => {
-                let lcdc = mem[MappedReg::Lcdc];
-                let ly = mem[MappedReg::Ly];
-                let scy = mem[MappedReg::Scy];
-                let y_offset = ly.wrapping_add(scy) & 0x7;
-                let addr_mode_bit = !((lcdc >> 4) | (self.tile_id >> 7)) & 0x1;
-                let vram_addr = ((addr_mode_bit as u16) << 12)
-                    | ((self.tile_id as u16) << 4)
-                    | ((y_offset as u16) << 1)
-                    | high as u16;
-                self.state = FetchTile { high, vram_addr };
-            }
-            FetchTile { high, vram_addr } => {
-                let bank = (self.attributes >> 3) & 0x1;
-                self.pixel_data[high as usize] = mem.vram()[bank as usize][vram_addr as usize];
-                self.state = if high { Push } else { ComputeAddress { high: true } };
-            }
-            Push if fifo.size == 0 => {
-                let color_low = self.pixel_data[0];
-                let color_high = self.pixel_data[1];
-                let palette = self.attributes & 0x7;
-                let priority = self.attributes >> 7;
-                for (mut i, pixel) in fifo.fifo.iter_mut().enumerate() {
-                    i = 7 - i;
-                    let color_low = (color_low >> i) & 0x1;
-                    let color_high = (color_high >> i) & 0x1;
-                    *pixel = Pixel {
-                        color: (color_high << 1) | color_low,
-                        palette,
-                        obj: None,
-                        priority,
-                    };
-                }
-                fifo.size = 8;
-                self.state = ComputeTileAddress;
-            }
-            Push => (),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.state = Default::default();
-    }
-}
-
-#[derive(Debug, Default)]
-struct PixelFifo {
-    fifo: [Pixel; 8],
-    size: usize,
-}
-
-impl PixelFifo {
-    fn pop(&mut self) -> Option<Pixel> {
-        if self.size > 0 {
-            let pixel = self.fifo[self.fifo.len() - self.size];
-            self.size -= 1;
-            Some(pixel)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct PixelPipeline {
-    fetcher: PixelFetcher,
-    bg_fifo: PixelFifo,
-}
-
-impl PixelPipeline {
-    fn try_fetch_pixel(&mut self, lx: u8, mem: &Memory) -> Option<Pixel> {
-        self.fetcher.fetch(lx, &mut self.bg_fifo, mem);
-        self.bg_fifo.pop()
-    }
-
-    fn reset(&mut self) {
-        self.fetcher.reset();
-        self.bg_fifo.size = 0;
-    }
-}
-
-#[derive(Debug)]
-enum DrawState {
-    Scroll { skip_count: u8 },
-    Draw { lx: u8 },
-}
-
-impl DrawState {
-    fn lx(&self) -> u8 {
-        if let Self::Draw { lx } = self {
-            *lx
-        } else {
-            0
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-#[repr(u8)]
 enum ModeState {
     HBlank = 0,
     VBlank,
     #[default]
     OamSearch,
-    Transfer(DrawState),
+    Transfer,
 }
 
 impl ModeState {
-    fn mode(&self) -> u8 {
-        // SAFETY: This is safe with repr(..) enums. Discriminant is always stored at the beginning
-        // of the allocation in this case.
-        unsafe { *(self as *const _ as *const _) }
-    }
-
-    fn start_transfer(&mut self, mem: &Memory) {
-        let scx = mem[MappedReg::Scx];
-        let skip_count = scx & 0x7;
-        let draw_state = if skip_count > 0 {
-            DrawState::Scroll { skip_count }
-        } else {
-            DrawState::Draw { lx: 0 }
-        };
-        *self = Self::Transfer(draw_state);
+    const fn cycles(&self) -> usize {
+        match self {
+            Self::OamSearch => 21,
+            Self::Transfer => 43,
+            Self::HBlank => 50,
+            Self::VBlank => 114,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Ppu {
     mode_state: ModeState,
-    pipeline: PixelPipeline,
     ly: u8,
-    line_dot: usize,
+    mode_cycles_remaining: usize,
 }
 
 type Color = [u8; 2];
@@ -208,11 +43,11 @@ fn ram_to_palettes(ram: &PaletteRam) -> &Palettes {
 
 impl Ppu {
     pub fn new(mem: &mut Memory) -> Self {
+        let mode_state = ModeState::default();
         let mut result = Self {
-            mode_state: Default::default(),
-            pipeline: Default::default(),
+            mode_cycles_remaining: mode_state.cycles(),
+            mode_state,
             ly: 0,
-            line_dot: 0,
         };
         // Registers should be given initial values on startup. Not sure how actual hardware
         // behaves, but this is nice for an emulator.
@@ -220,44 +55,62 @@ impl Ppu {
         result
     }
 
-    fn draw(
-        ly: u8,
-        draw_state: &mut DrawState,
-        pipeline: &mut PixelPipeline,
-        frame_buff: &mut FrameBuffer,
-        mem: &Memory,
-    ) -> bool {
-        let Some(pixel) = pipeline.try_fetch_pixel(draw_state.lx(), mem) else { return false };
-        match draw_state {
-            DrawState::Scroll { skip_count } => {
-                *skip_count -= 1;
-                if *skip_count == 0 {
-                    *draw_state = DrawState::Draw { lx: 0 };
-                }
-                false
-            }
-            DrawState::Draw { lx } => {
-                let palette = ram_to_palettes(&mem.bg_palette_ram())[pixel.palette as usize];
-                let color = u16::from_le_bytes(palette[pixel.color as usize]);
-                let mask_rescale = |c| ((c & 0x1f) * 0xff / 0x1f) as u8;
-                let red = mask_rescale(color);
-                let green = mask_rescale(color >> 5);
-                let blue = mask_rescale(color >> 10);
-                frame_buff[ly as usize][*lx as usize] = [red, green, blue, 0xff];
-                *lx += 1;
-                *lx == Cgb::SCREEN_WIDTH as u8
-            }
+    fn draw_scanline(&self, frame_buff: &mut FrameBuffer, mem: &Memory) {
+        // TODO: OAM Search
+        let lcdc = mem[MappedReg::Lcdc];
+        let scy = mem[MappedReg::Scy];
+        let scx = mem[MappedReg::Scx];
+        let vram = mem.vram();
+        let pixel_y = self.ly.wrapping_add(scy);
+        let tile_y = pixel_y / 8;
+        for lx in 0..Cgb::SCREEN_WIDTH as u8 {
+            let pixel_x = lx.wrapping_add(scx);
+            // Compute the tilemap address
+            let map_area_bit = ((lcdc >> 3) & 0x1) as usize;
+            let tile_x = pixel_x / 8;
+            let vram_addr =
+                0x1800 | (map_area_bit << 10) | ((tile_y as usize) << 5) | tile_x as usize;
+            // Grab the tile ID and attributes from the tile map
+            let tile_id = vram[0][vram_addr];
+            let attributes = vram[1][vram_addr];
+
+            // Grab the pixel data corresponding to that tile ID
+            let y_offset = pixel_y & 0x7;
+            let addr_mode_bit = !((lcdc >> 4) | (tile_id >> 7)) & 0x1;
+            let vram_addr = ((addr_mode_bit as usize) << 12)
+                | ((tile_id as usize) << 4)
+                | ((y_offset as usize) << 1);
+            let bank = (attributes >> 3) & 0x1;
+            let vram_bank = &vram[bank as usize];
+            let color_low = vram_bank[vram_addr];
+            let color_high = vram_bank[vram_addr + 1];
+
+            // Convert the data and render it to the screen
+            let palette = attributes & 0x7;
+            // let priority = attributes >> 7;
+            let color_bit = 7 - (pixel_x & 0x7);
+            let color_low = (color_low >> color_bit) & 0x1;
+            let color_high = (color_high >> color_bit) & 0x1;
+            let color = (color_high << 1) | color_low;
+
+            let palette = ram_to_palettes(&mem.bg_palette_ram())[palette as usize];
+            let color = u16::from_le_bytes(palette[color as usize]);
+            let mask_rescale = |c| ((c & 0x1f) * 0xff / 0x1f) as u8;
+            let red = mask_rescale(color);
+            let green = mask_rescale(color >> 5);
+            let blue = mask_rescale(color >> 10);
+            frame_buff[self.ly as usize][lx as usize] = [red, green, blue, 0xff];
         }
     }
 
-    fn start_transfer(&mut self, mem: &mut Memory) {
-        self.pipeline.reset();
-        self.mode_state.start_transfer(mem);
+    fn switch_mode(&mut self, mode: ModeState) {
+        self.mode_cycles_remaining = mode.cycles();
+        self.mode_state = mode;
     }
 
     fn update_control_regs(&mut self, mem: &mut Memory) {
         mem[MappedReg::Ly] = self.ly;
-        mem[MappedReg::Stat] = self.mode_state.mode();
+        mem[MappedReg::Stat] = self.mode_state as u8;
     }
 
     pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut Memory) {
@@ -267,48 +120,41 @@ impl Ppu {
         if !lcd_enabled {
             // TODO: Ideally we would do this only on the first dot after the LCD is disabled.
             self.ly = 0;
-            self.line_dot = 0;
             self.mode_state = ModeState::OamSearch;
-            self.pipeline.reset();
+            self.mode_cycles_remaining = self.mode_state.cycles();
             self.update_control_regs(mem);
             return;
         }
 
-        match &mut self.mode_state {
-            ModeState::OamSearch => {
-                // TODO: OAM Search
-                self.line_dot += 1;
-                if self.line_dot == 80 {
-                    self.start_transfer(mem);
-                }
-            }
-            ModeState::Transfer(draw_state) => {
-                let scanline_completed =
-                    Self::draw(self.ly, draw_state, &mut self.pipeline, frame_buff, mem);
-                self.line_dot += 1;
-                // Assuming that we will always have at least 1 dot of HBlank, no matter what is
-                // drawn to the screen.
-                assert!(self.line_dot < Cgb::DOTS_PER_LINE);
-                if scanline_completed {
-                    self.mode_state = ModeState::HBlank;
-                }
-            }
-            blank @ (ModeState::HBlank | ModeState::VBlank) => {
-                self.line_dot += 1;
-                self.line_dot %= Cgb::DOTS_PER_LINE;
-                if self.line_dot == 0 {
-                    self.ly += 1;
-                    self.ly %= (Cgb::SCREEN_HEIGHT + Cgb::VBLANK_LINES) as u8;
+        if self.mode_cycles_remaining > 0 {
+            // There are still cycles left for the current mode. Wait to do anything until the last
+            // cycle.
+            self.mode_cycles_remaining -= 1;
+            return;
+        }
 
-                    if let ModeState::HBlank = blank {
-                        self.mode_state = ModeState::OamSearch;
-                    }
-                    if self.ly == Cgb::SCREEN_HEIGHT as u8 {
-                        self.mode_state = ModeState::VBlank;
-                        Interrupt::VBlank.request(mem);
-                    } else if self.ly == 0 {
-                        self.mode_state = ModeState::OamSearch;
-                    }
+        match self.mode_state {
+            ModeState::OamSearch => self.mode_state = ModeState::Transfer,
+            ModeState::Transfer => {
+                self.draw_scanline(frame_buff, mem);
+                self.switch_mode(ModeState::HBlank);
+            }
+            ModeState::HBlank => {
+                self.ly += 1;
+                self.switch_mode(if self.ly == Cgb::SCREEN_HEIGHT as u8 {
+                    Interrupt::VBlank.request(mem);
+                    ModeState::VBlank
+                } else {
+                    ModeState::OamSearch
+                });
+            }
+            ModeState::VBlank => {
+                self.ly += 1;
+                if self.ly == Cgb::FRAME_LINES as u8 {
+                    self.ly = 0;
+                    self.switch_mode(ModeState::OamSearch);
+                } else {
+                    self.mode_cycles_remaining = ModeState::VBlank.cycles();
                 }
             }
         }
@@ -350,7 +196,7 @@ mod tests {
         }
 
         fn draw_frame(&mut self) {
-            for _ in 0..Cgb::DOTS_PER_FRAME {
+            for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
                 self.ppu.execute(&mut self.frame_buff, &mut self.mem);
             }
         }

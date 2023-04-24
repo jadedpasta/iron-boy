@@ -4,7 +4,7 @@ mod memory;
 mod ppu;
 
 use pixels::wgpu::TextureFormat;
-use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
+use pixels::{PixelsBuilder, SurfaceTexture};
 use ppu::Ppu;
 use std::time::{Duration, Instant};
 use std::{env, fs, mem};
@@ -28,8 +28,9 @@ impl Cgb {
     const SCREEN_WIDTH: usize = 160;
     const SCREEN_HEIGHT: usize = 144;
     const VBLANK_LINES: usize = 10;
+    const FRAME_LINES:  usize = Self::SCREEN_HEIGHT + Self::VBLANK_LINES;
     const DOTS_PER_LINE: usize = 456;
-    const DOTS_PER_FRAME: usize = (Self::SCREEN_HEIGHT + Self::VBLANK_LINES) * Self::DOTS_PER_LINE;
+    const DOTS_PER_FRAME: usize = Self::FRAME_LINES * Self::DOTS_PER_LINE;
 
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
@@ -40,12 +41,9 @@ impl Cgb {
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
-        for dot in 0..Self::DOTS_PER_FRAME {
+        for _ in 0..Self::DOTS_PER_FRAME / 4 {
             self.ppu.execute(frame_buff, &mut self.memory);
-
-            if dot % 4 == 0 {
-                self.cpu.execute(&mut self.memory);
-            }
+            self.cpu.execute(&mut self.memory);
         }
     }
 
