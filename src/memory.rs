@@ -3,6 +3,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
+
 #[allow(unused)]
 pub enum MappedReg {
     P1 = 0xff00,    // Joypad                                    | Mixed | All
@@ -48,6 +50,7 @@ pub enum MappedReg {
     Wx = 0xff4b,    // Window X position plus 7                  | R/W   | All
     Key1 = 0xff4d,  // Prepare speed switch                      | Mixed | CGB
     Vbk = 0xff4f,   // VRAM bank                                 | R/W   | CGB
+    Bank = 0xff50,  // Write to unmap boot ROM                   | ?     | All
     Hdma1 = 0xff51, // VRAM DMA source high                      | W     | CGB
     Hdma2 = 0xff52, // VRAM DMA source low                       | W     | CGB
     Hdma3 = 0xff53, // VRAM DMA destination high                 | W     | CGB
@@ -68,7 +71,7 @@ pub enum MappedReg {
 pub type VRam = [[u8; 0x2000]; 2];
 pub type PaletteRam = [u8; 64];
 
-pub struct Memory {
+struct MemoryData {
     cartrige_rom: [u8; 0x8000], // TODO: MBCs
     vram: VRam,
     cartrige_ram: [u8; 0x2000], // TODO: MBCs
@@ -82,23 +85,28 @@ pub struct Memory {
     obj_palette: PaletteRam,
 }
 
+pub struct Memory {
+    mem: MemoryData,
+    boot_rom_mapped: bool,
+}
+
 macro_rules! impl_addr_to_ref {
     ($name:ident $( $mut:tt )?) => {
        fn $name(& $( $mut )* self, addr: u16) -> & $( $mut )* u8 {
            match addr {
-               0x0000..=0x7fff => & $( $mut )* self.cartrige_rom[addr as usize],
-               0x8000..=0x9fff => & $( $mut )* self.vram[{
+               0x0000..=0x7fff => & $( $mut )* self.mem.cartrige_rom[addr as usize],
+               0x8000..=0x9fff => & $( $mut )* self.mem.vram[{
                    self[MappedReg::Vbk] as usize & 0x1
                }][addr as usize & 0x1fff],
-               0xa000..=0xbfff => & $( $mut )* self.cartrige_ram[addr as usize & 0x1fff],
-               0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.wram_low[addr as usize & 0xfff],
-               0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.wram_high[{
+               0xa000..=0xbfff => & $( $mut )* self.mem.cartrige_ram[addr as usize & 0x1fff],
+               0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.mem.wram_low[addr as usize & 0xfff],
+               0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.mem.wram_high[{
                    let svbk = self[MappedReg::Svbk] as usize & 0x3;
                    if svbk == 0 { 0 } else { svbk - 1 }
                }][addr as usize & 0xfff],
-               0xfe00..=0xfe9f => & $( $mut )* self.oam[addr as usize & 0x9f],
+               0xfe00..=0xfe9f => & $( $mut )* self.mem.oam[addr as usize & 0x9f],
                0xfea0..=0xfeff => panic!("Attempt to access illegal memory area"),
-               0xff00..=0xffff => & $( $mut )* self.hram[addr as usize & 0xff],
+               0xff00..=0xffff => & $( $mut )* self.mem.hram[addr as usize & 0xff],
            }
        }
     };
@@ -107,38 +115,41 @@ macro_rules! impl_addr_to_ref {
 impl Memory {
     pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
         let mut rom = rom.into();
-        // SAFTEY: All zeros is valid for Memory, which is just a bunch of nested arrays of u8
-        let mut mem = Box::new(unsafe { MaybeUninit::<Memory>::zeroed().assume_init() });
-        rom.resize(mem::size_of_val(&mem.cartrige_rom), 0);
-        mem.cartrige_rom.copy_from_slice(&rom[..]);
+        // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
+        let mut mem = Box::new(Memory {
+            mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
+            boot_rom_mapped: true,
+        });
+        rom.resize(mem::size_of_val(&mem.mem.cartrige_rom), 0);
+        mem.mem.cartrige_rom.copy_from_slice(&rom[..]);
         mem
     }
 
     pub fn vram(&self) -> &VRam {
-        &self.vram
+        &self.mem.vram
     }
 
     pub fn bg_palette_ram(&self) -> &PaletteRam {
-        &self.bg_palette
+        &self.mem.bg_palette
     }
 
     pub fn obj_palette_ram(&self) -> &PaletteRam {
-        &self.obj_palette
+        &self.mem.obj_palette
     }
 
     #[cfg(test)]
     pub fn vram_mut(&mut self) -> &mut VRam {
-        &mut self.vram
+        &mut self.mem.vram
     }
 
     #[cfg(test)]
     pub fn bg_palette_ram_mut(&mut self) -> &mut PaletteRam {
-        &mut self.bg_palette
+        &mut self.mem.bg_palette
     }
 
     #[cfg(test)]
     pub fn obj_palette_ram_mut(&mut self) -> &mut PaletteRam {
-        &mut self.obj_palette
+        &mut self.mem.obj_palette
     }
 
     impl_addr_to_ref!(addr_to_ref);
@@ -148,8 +159,9 @@ impl Memory {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
         match addr {
-            BCPD => self.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
-            OCPD => self.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
+            0x0000..=0x00ff | 0x0200..=0x08ff if self.boot_rom_mapped => BOOT_ROM[addr as usize],
+            BCPD => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
+            OCPD => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
             _ => *self.addr_to_ref(addr),
         }
     }
@@ -161,15 +173,17 @@ impl Memory {
     pub fn write_8(&mut self, addr: u16, val: u8) {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
+        const BANK: u16 = MappedReg::Bank as _;
         match addr {
             BCPD => {
-                self.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize] = val;
+                self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Bcps]);
             }
             OCPD => {
-                self.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize] = val;
+                self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Ocps]);
             }
+            BANK => self.boot_rom_mapped = false,
             _ => *self.addr_to_ref_mut(addr) = val,
         }
     }
