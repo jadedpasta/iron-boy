@@ -278,6 +278,16 @@ impl Cpu {
         self.regs.set_flags(Flag::CARRY, carry);
         self.regs.set_flags(Flag::HALF_CARRY, half_carry);
     }
+
+    pub(super) fn ccf(&mut self) {
+        self.regs.set_flags(Flag::SUB | Flag::HALF_CARRY, false);
+        self.regs[Reg8::F] ^= Flag::CARRY;
+    }
+
+    pub(super) fn scf(&mut self) {
+        self.regs.set_flags(Flag::SUB | Flag::HALF_CARRY, false);
+        self.regs.set_flags(Flag::CARRY, true);
+    }
 }
 
 #[cfg(test)]
