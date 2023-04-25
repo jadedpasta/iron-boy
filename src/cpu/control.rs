@@ -60,6 +60,10 @@ impl Cpu {
         }
     }
 
+    pub(super) fn rst(&mut self, addr: u8, mem: &mut Memory) {
+        self.call_addr(addr as u16, mem);
+    }
+
     pub(super) fn ret(&mut self, mem: &Memory) {
         let sp = &mut self.regs[Reg16::SP];
         self.pc = mem.read_16(*sp);

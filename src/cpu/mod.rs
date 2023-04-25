@@ -273,7 +273,7 @@ impl Cpu {
             // JpHl => (),
             Jr(None) => self.jump_relative(mem),
             Jr(Some(test)) => self.jump_relative_conditional(test, entry.branch_cycles, mem),
-            // Rst(u8) => (),
+            Rst(addr) => self.rst(addr, mem),
             Ret(None) => self.ret(mem),
             Ret(Some(test)) => self.ret_conditional(test, entry.branch_cycles, mem),
             Reti => self.reti(mem),
