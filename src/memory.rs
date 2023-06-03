@@ -160,6 +160,11 @@ impl Memory {
         const OCPD: u16 = MappedReg::Ocpd as _;
         match addr {
             0x0000..=0x00ff | 0x0200..=0x08ff if self.boot_rom_mapped => BOOT_ROM[addr as usize],
+            0xfea0..=0xfeff => {
+                // CGB-E prohibited area reads, according to pandocs
+                let low = addr as u8 & 0x0f;
+                low << 4 | low
+            },
             BCPD => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
             OCPD => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
             _ => *self.addr_to_ref(addr),
@@ -175,6 +180,7 @@ impl Memory {
         const OCPD: u16 = MappedReg::Ocpd as _;
         const BANK: u16 = MappedReg::Bank as _;
         match addr {
+            0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
             BCPD => {
                 self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Bcps]);
