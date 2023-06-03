@@ -270,7 +270,7 @@ impl Cpu {
             Call(Some(test)) => self.call_conditional(test, entry.branch_cycles, mem),
             Jp(None) => self.jump(mem),
             Jp(Some(test)) => self.jump_conditional(test, entry.branch_cycles, mem),
-            // JpHl => (),
+            JpHl => self.jump_hl(),
             Jr(None) => self.jump_relative(mem),
             Jr(Some(test)) => self.jump_relative_conditional(test, entry.branch_cycles, mem),
             Rst(addr) => self.rst(addr, mem),

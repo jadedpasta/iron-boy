@@ -16,6 +16,10 @@ impl Cpu {
         self.pc = self.read_immedate_16(mem);
     }
 
+    pub(super) fn jump_hl(&mut self) {
+        self.pc = self.regs[Reg16::HL];
+    }
+
     pub(super) fn jump_conditional(&mut self, test: Test, cycles: usize, mem: &Memory) {
         if self.test(test) {
             self.jump(mem);
