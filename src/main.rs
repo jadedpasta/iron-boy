@@ -2,7 +2,9 @@ mod cpu;
 mod interrupt;
 mod memory;
 mod ppu;
+mod joypad;
 
+use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
 use ppu::Ppu;
@@ -51,6 +53,16 @@ impl Cgb {
         let buff: &mut [u8; 4 * Self::SCREEN_WIDTH * Self::SCREEN_HEIGHT] = buff.try_into().ok()?;
         Some(unsafe { mem::transmute(buff) })
     }
+
+    fn handle_joypad(&mut self, button: Button, state: ButtonState) {
+        self.memory.handle_joypad(button, state);
+    }
+}
+
+fn handle_key(cgb: &mut Cgb, key: VirtualKeyCode, state: ElementState) {
+    let Some(button) = Button::from_keycode(key) else { return; };
+    let state = ButtonState::from_state(state);
+    cgb.handle_joypad(button, state);
 }
 
 fn main() {
@@ -109,7 +121,7 @@ fn main() {
                     (VirtualKeyCode::Escape, ElementState::Released) => {
                         *control_flow = ControlFlow::Exit
                     }
-                    _ => (),
+                    (key, state) => handle_key(&mut cgb, key, state),
                 },
                 _ => (),
             },

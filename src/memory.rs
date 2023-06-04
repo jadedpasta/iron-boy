@@ -3,6 +3,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use crate::joypad::{Button, ButtonState, JoypadState};
+
 const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
 
 #[allow(unused)]
@@ -87,6 +89,7 @@ struct MemoryData {
 
 pub struct Memory {
     mem: MemoryData,
+    joypad: JoypadState,
     boot_rom_mapped: bool,
 }
 
@@ -115,9 +118,10 @@ macro_rules! impl_addr_to_ref {
 impl Memory {
     pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
         let mut rom = rom.into();
-        // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
         let mut mem = Box::new(Memory {
+            // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
             mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
+            joypad: JoypadState::new(),
             boot_rom_mapped: true,
         });
         rom.resize(mem::size_of_val(&mem.mem.cartrige_rom), 0);
@@ -158,6 +162,7 @@ impl Memory {
     pub fn read_8(&self, addr: u16) -> u8 {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
+        const P1: u16 = MappedReg::P1 as _;
         match addr {
             0x0000..=0x00ff | 0x0200..=0x08ff if self.boot_rom_mapped => BOOT_ROM[addr as usize],
             0xfea0..=0xfeff => {
@@ -167,6 +172,19 @@ impl Memory {
             },
             BCPD => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
             OCPD => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
+            P1 => {
+                let p1 = self[MappedReg::P1];
+
+                let mut bits = 0;
+                if (p1 >> 4) & 0x1 == 0 {
+                    bits |= self.joypad.direction_bits();
+                }
+                if (p1 >> 5) & 0x1 == 0 {
+                    bits |= self.joypad.action_bits();
+                }
+
+                p1 & 0xf0 | !bits & 0x0f
+            }
             _ => *self.addr_to_ref(addr),
         }
     }
@@ -202,6 +220,10 @@ impl Memory {
         let [low, high] = val.to_le_bytes();
         self.write_8(addr, low);
         self.write_8(addr.wrapping_add(1), high);
+    }
+
+    pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
+        self.joypad.handle(button, state);
     }
 }
 
