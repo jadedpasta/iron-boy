@@ -1,4 +1,4 @@
-use winit::event::{VirtualKeyCode, ElementState};
+use winit::event::{ElementState, VirtualKeyCode};
 
 pub enum Button {
     Right = 0,
@@ -65,4 +65,3 @@ impl JoypadState {
         (self.0 >> 4) & 0x0f
     }
 }
-

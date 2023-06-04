@@ -169,7 +169,7 @@ impl Memory {
                 // CGB-E prohibited area reads, according to pandocs
                 let low = addr as u8 & 0x0f;
                 low << 4 | low
-            },
+            }
             BCPD => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
             OCPD => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
             P1 => {

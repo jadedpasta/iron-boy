@@ -1,8 +1,8 @@
 mod cpu;
 mod interrupt;
+mod joypad;
 mod memory;
 mod ppu;
-mod joypad;
 
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
@@ -30,7 +30,7 @@ impl Cgb {
     const SCREEN_WIDTH: usize = 160;
     const SCREEN_HEIGHT: usize = 144;
     const VBLANK_LINES: usize = 10;
-    const FRAME_LINES:  usize = Self::SCREEN_HEIGHT + Self::VBLANK_LINES;
+    const FRAME_LINES: usize = Self::SCREEN_HEIGHT + Self::VBLANK_LINES;
     const DOTS_PER_LINE: usize = 456;
     const DOTS_PER_FRAME: usize = Self::FRAME_LINES * Self::DOTS_PER_LINE;
 

@@ -44,11 +44,7 @@ fn ram_to_palettes(ram: &PaletteRam) -> &Palettes {
 impl Ppu {
     pub fn new(mem: &mut Memory) -> Self {
         let mode_state = ModeState::default();
-        let mut result = Self {
-            mode_cycles_remaining: mode_state.cycles(),
-            mode_state,
-            ly: 0,
-        };
+        let mut result = Self { mode_cycles_remaining: mode_state.cycles(), mode_state, ly: 0 };
         // Registers should be given initial values on startup. Not sure how actual hardware
         // behaves, but this is nice for an emulator.
         result.update_control_regs(mem);
