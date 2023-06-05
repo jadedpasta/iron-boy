@@ -56,6 +56,7 @@ impl Ppu {
         let lcdc = mem[MappedReg::Lcdc];
         let scy = mem[MappedReg::Scy];
         let scx = mem[MappedReg::Scx];
+        let bgp = mem[MappedReg::Bgp];
         let vram = mem.vram();
         let pixel_y = self.ly.wrapping_add(scy);
         let tile_y = pixel_y / 8;
@@ -76,21 +77,35 @@ impl Ppu {
             let vram_addr = ((addr_mode_bit as usize) << 12)
                 | ((tile_id as usize) << 4)
                 | ((y_offset as usize) << 1);
-            let bank = (attributes >> 3) & 0x1;
+            let bank = mem.cgb_mode() as u8 & (attributes >> 3) & 0x1;
             let vram_bank = &vram[bank as usize];
             let color_low = vram_bank[vram_addr];
             let color_high = vram_bank[vram_addr + 1];
 
             // Convert the data and render it to the screen
-            let palette = attributes & 0x7;
-            // let priority = attributes >> 7;
             let color_bit = 7 - (pixel_x & 0x7);
             let color_low = (color_low >> color_bit) & 0x1;
             let color_high = (color_high >> color_bit) & 0x1;
             let color = (color_high << 1) | color_low;
 
+            // let priority = attributes >> 7;
+            let palette = if mem.cgb_mode() {
+                attributes & 0x7
+            } else {
+                0
+            };
             let palette = ram_to_palettes(&mem.bg_palette_ram())[palette as usize];
+
+            let color = if mem.cgb_mode() {
+                color
+            } else if lcdc & 0x1 == 0 {
+                0
+            } else {
+                (bgp >> (color * 2)) & 0x3
+            };
+
             let color = u16::from_le_bytes(palette[color as usize]);
+
             let mask_rescale = |c| ((c & 0x1f) * 0xff / 0x1f) as u8;
             let red = mask_rescale(color);
             let green = mask_rescale(color >> 5);

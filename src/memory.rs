@@ -6,6 +6,7 @@ use std::{
 use crate::joypad::{Button, ButtonState, JoypadState};
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
+const NON_CGB_KEY0_VAL: u8 = 0x04;
 
 #[allow(unused)]
 pub enum MappedReg {
@@ -50,6 +51,7 @@ pub enum MappedReg {
     Obp1 = 0xff49,  // OBJ palette 1 data                        | R/W   | DMG
     Wy = 0xff4a,    // Window Y position                         | R/W   | All
     Wx = 0xff4b,    // Window X position plus 7                  | R/W   | All
+    Key0 = 0xff4c,  // Disable CGB mode; enable compat           | Mixed | CGB
     Key1 = 0xff4d,  // Prepare speed switch                      | Mixed | CGB
     Vbk = 0xff4f,   // VRAM bank                                 | R/W   | CGB
     Bank = 0xff50,  // Write to unmap boot ROM                   | ?     | All
@@ -91,6 +93,7 @@ pub struct Memory {
     mem: MemoryData,
     joypad: JoypadState,
     boot_rom_mapped: bool,
+    cgb_mode: bool,
 }
 
 macro_rules! impl_addr_to_ref {
@@ -98,14 +101,16 @@ macro_rules! impl_addr_to_ref {
        fn $name(& $( $mut )* self, addr: u16) -> & $( $mut )* u8 {
            match addr {
                0x0000..=0x7fff => & $( $mut )* self.mem.cartrige_rom[addr as usize],
-               0x8000..=0x9fff => & $( $mut )* self.mem.vram[{
+               0x8000..=0x9fff => & $( $mut )* self.mem.vram[if self.cgb_mode {
                    self[MappedReg::Vbk] as usize & 0x1
+               } else {
+                   0
                }][addr as usize & 0x1fff],
                0xa000..=0xbfff => & $( $mut )* self.mem.cartrige_ram[addr as usize & 0x1fff],
                0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.mem.wram_low[addr as usize & 0xfff],
                0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.mem.wram_high[{
                    let svbk = self[MappedReg::Svbk] as usize & 0x3;
-                   if svbk == 0 { 0 } else { svbk - 1 }
+                   if !self.cgb_mode || svbk == 0 { 0 } else { svbk - 1 }
                }][addr as usize & 0xfff],
                0xfe00..=0xfe9f => & $( $mut )* self.mem.oam[addr as usize & 0x9f],
                0xfea0..=0xfeff => panic!("Attempt to access illegal memory area"),
@@ -123,6 +128,7 @@ impl Memory {
             mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
             joypad: JoypadState::new(),
             boot_rom_mapped: true,
+            cgb_mode: true,
         });
         rom.resize(mem::size_of_val(&mem.mem.cartrige_rom), 0);
         mem.mem.cartrige_rom.copy_from_slice(&rom[..]);
@@ -170,8 +176,8 @@ impl Memory {
                 let low = addr as u8 & 0x0f;
                 low << 4 | low
             }
-            BCPD => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
-            OCPD => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
+            BCPD if self.cgb_mode => self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize],
+            OCPD if self.cgb_mode => self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize],
             P1 => {
                 let p1 = self[MappedReg::P1];
 
@@ -199,15 +205,18 @@ impl Memory {
         const BANK: u16 = MappedReg::Bank as _;
         match addr {
             0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
-            BCPD => {
+            BCPD if self.cgb_mode => {
                 self.mem.bg_palette[(self[MappedReg::Bcps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Bcps]);
             }
-            OCPD => {
+            OCPD if self.cgb_mode => {
                 self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Ocps]);
             }
-            BANK => self.boot_rom_mapped = false,
+            BANK if self.boot_rom_mapped => {
+                self.boot_rom_mapped = false;
+                self.cgb_mode = self[MappedReg::Key0] != NON_CGB_KEY0_VAL;
+            }
             _ => *self.addr_to_ref_mut(addr) = val,
         }
     }
@@ -224,6 +233,10 @@ impl Memory {
 
     pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
         self.joypad.handle(button, state);
+    }
+
+    pub fn cgb_mode(&self) -> bool {
+        self.cgb_mode
     }
 }
 
