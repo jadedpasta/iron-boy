@@ -89,11 +89,7 @@ impl Ppu {
             let color = (color_high << 1) | color_low;
 
             // let priority = attributes >> 7;
-            let palette = if mem.cgb_mode() {
-                attributes & 0x7
-            } else {
-                0
-            };
+            let palette = if mem.cgb_mode() { attributes & 0x7 } else { 0 };
             let palette = ram_to_palettes(&mem.bg_palette_ram())[palette as usize];
 
             let color = if mem.cgb_mode() {

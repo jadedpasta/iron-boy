@@ -1,9 +1,11 @@
 mod cpu;
+mod dma;
 mod interrupt;
 mod joypad;
 mod memory;
 mod ppu;
 
+use dma::Dma;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
@@ -16,12 +18,13 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 use cpu::Cpu;
-use memory::Memory;
+use memory::{MappedReg, Memory};
 
 struct Cgb {
     memory: Box<Memory>,
     cpu: Cpu,
     ppu: Ppu,
+    dma: Dma,
 }
 type FrameBuffer = [[[u8; 4]; Cgb::SCREEN_WIDTH]; Cgb::SCREEN_HEIGHT];
 
@@ -39,13 +42,18 @@ impl Cgb {
 
         let mut memory = Memory::new(rom);
 
-        Self { ppu: Ppu::new(&mut memory), memory, cpu: Cpu::default() }
+        Self { ppu: Ppu::new(&mut memory), memory, cpu: Cpu::default(), dma: Dma::new() }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
+        let lcd_on = self.memory[MappedReg::Lcdc] & 0x80 != 0;
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
             self.ppu.execute(frame_buff, &mut self.memory);
+            self.dma.execute(&mut self.memory);
             self.cpu.execute(&mut self.memory);
+            if !lcd_on && self.memory[MappedReg::Lcdc] & 0x80 != 0 {
+                return;
+            }
         }
     }
 

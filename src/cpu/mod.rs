@@ -287,6 +287,10 @@ impl Cpu {
     }
 
     pub fn execute(&mut self, mem: &mut Memory) {
+        if mem.cpu_dma_paused {
+            return;
+        }
+
         if self.cycles_remaining == 0 && !self.handle_interrupts(mem) {
             let start_pc = self.pc;
             let opcode = self.read_immedate_8(mem);

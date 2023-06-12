@@ -3,7 +3,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::joypad::{Button, ButtonState, JoypadState};
+use crate::{
+    dma::DmaState,
+    joypad::{Button, ButtonState, JoypadState},
+};
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
 const NON_CGB_KEY0_VAL: u8 = 0x04;
@@ -94,6 +97,8 @@ pub struct Memory {
     joypad: JoypadState,
     boot_rom_mapped: bool,
     cgb_mode: bool,
+    pub cpu_dma_paused: bool,
+    pub dma_state: Option<DmaState>,
 }
 
 macro_rules! impl_addr_to_ref {
@@ -129,6 +134,8 @@ impl Memory {
             joypad: JoypadState::new(),
             boot_rom_mapped: true,
             cgb_mode: true,
+            cpu_dma_paused: false,
+            dma_state: None,
         });
         rom.resize(mem::size_of_val(&mem.mem.cartrige_rom), 0);
         mem.mem.cartrige_rom.copy_from_slice(&rom[..]);
@@ -147,7 +154,6 @@ impl Memory {
         &self.mem.obj_palette
     }
 
-    #[cfg(test)]
     pub fn vram_mut(&mut self) -> &mut VRam {
         &mut self.mem.vram
     }
@@ -203,6 +209,7 @@ impl Memory {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
         const BANK: u16 = MappedReg::Bank as _;
+        const HDMA5: u16 = MappedReg::Hdma5 as _;
         match addr {
             0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
             BCPD if self.cgb_mode => {
@@ -212,6 +219,13 @@ impl Memory {
             OCPD if self.cgb_mode => {
                 self.mem.obj_palette[(self[MappedReg::Ocps] & 0x3f) as usize] = val;
                 Self::auto_inc_cps(&mut self[MappedReg::Ocps]);
+            }
+            HDMA5 if self.cgb_mode => {
+                if val >> 7 != 0 {
+                    todo!("HBlank DMA");
+                }
+                self.dma_state =
+                    Some(DmaState { len: ((val & 0x7f) as u16).wrapping_add(1) * 16, count: 0 });
             }
             BANK if self.boot_rom_mapped => {
                 self.boot_rom_mapped = false;
