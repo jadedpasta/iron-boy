@@ -77,6 +77,7 @@ pub enum MappedReg {
 
 pub type VRam = [[u8; 0x2000]; 2];
 pub type PaletteRam = [u8; 64];
+pub type Oam = [u8; 0xa0];
 
 struct MemoryData {
     cartrige_rom: [u8; 0x8000], // TODO: MBCs
@@ -85,7 +86,7 @@ struct MemoryData {
     wram_low: [u8; 0x1000],
     wram_high: [[u8; 0x1000]; 7],
     // echo_ram: mirror of 0xc000~0xddff
-    oam: [u8; 0xa0],
+    oam: Oam,
     // prohibited_area: 0xfea0~0xfeff
     hram: [u8; 0x100], // HRAM and i/o registers
     bg_palette: PaletteRam,
@@ -144,6 +145,10 @@ impl Memory {
 
     pub fn vram(&self) -> &VRam {
         &self.mem.vram
+    }
+
+    pub fn oam(&self) -> &Oam {
+        &self.mem.oam
     }
 
     pub fn bg_palette_ram(&self) -> &PaletteRam {
