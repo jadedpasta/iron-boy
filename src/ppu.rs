@@ -170,13 +170,12 @@ impl Ppu {
         let bg_enable_pri = lcdc & 0x1 != 0;
         if let Some(obj_pixel) = obj_pixel {
             let obj_priority = obj_pixel.color != 0
-                && if mem.cgb_mode() {
-                    bg_pixel.color == 0
-                        || !bg_enable_pri
-                        || !bg_pixel.bg_over_obj && !obj_pixel.bg_over_obj
-                } else {
-                    !obj_pixel.bg_over_obj
-                };
+                && (bg_pixel.color == 0
+                    || if mem.cgb_mode() {
+                        !bg_enable_pri || !bg_pixel.bg_over_obj && !obj_pixel.bg_over_obj
+                    } else {
+                        !obj_pixel.bg_over_obj
+                    });
             if obj_priority {
                 let (color, palette) = if mem.cgb_mode() {
                     (obj_pixel.color, obj_pixel.palette)
