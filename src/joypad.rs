@@ -5,10 +5,10 @@ pub enum Button {
     Left,
     Up,
     Down,
-    Start,
-    Select,
-    B,
     A,
+    B,
+    Select,
+    Start,
 }
 
 impl Button {
