@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    dma::DmaState,
+    dma::{DmaState, DmaType},
     joypad::{Button, ButtonState, JoypadState},
 };
 
@@ -163,6 +163,10 @@ impl Memory {
         &mut self.mem.vram
     }
 
+    pub fn oam_mut(&mut self) -> &mut Oam {
+        &mut self.mem.oam
+    }
+
     #[cfg(test)]
     pub fn bg_palette_ram_mut(&mut self) -> &mut PaletteRam {
         &mut self.mem.bg_palette
@@ -214,6 +218,7 @@ impl Memory {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
         const BANK: u16 = MappedReg::Bank as _;
+        const DMA: u16 = MappedReg::Dma as _;
         const HDMA5: u16 = MappedReg::Hdma5 as _;
         match addr {
             0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
@@ -229,8 +234,22 @@ impl Memory {
                 if val >> 7 != 0 {
                     todo!("HBlank DMA");
                 }
-                self.dma_state =
-                    Some(DmaState { len: ((val & 0x7f) as u16).wrapping_add(1) * 16, count: 0 });
+                // TODO: Do some kind of cancel of an ongoing OAM DMA for simplicity
+                self.dma_state = Some(DmaState {
+                    ty: DmaType::General,
+                    len: ((val & 0x7f) as u16).wrapping_add(1) * 16,
+                    count: 0,
+                    oam_src: 0,
+                });
+            }
+            DMA => {
+                // TODO: Do some kind of cancel of an ongoing HDMA for simplicity
+                self.dma_state = Some(DmaState {
+                    ty: DmaType::Oam,
+                    len: 0xa0,
+                    count: 0,
+                    oam_src: (val as u16) << 8,
+                });
             }
             BANK if self.boot_rom_mapped => {
                 self.boot_rom_mapped = false;
