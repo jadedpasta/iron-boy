@@ -1,6 +1,4 @@
-use crate::memory::{MappedReg, Memory};
-
-use super::Cpu;
+use super::{Cpu, CpuBus};
 
 impl Cpu {
     pub(super) fn ei(&mut self) {
@@ -12,9 +10,9 @@ impl Cpu {
         self.interrupts_enabled = false;
     }
 
-    pub(super) fn reti(&mut self, mem: &Memory) {
+    pub(super) fn reti(&mut self, bus: &impl CpuBus) {
         self.interrupts_enabled = true;
-        self.ret(mem);
+        self.ret(bus);
     }
 
     pub(super) fn update_interrupt_timer(&mut self) {
@@ -26,19 +24,12 @@ impl Cpu {
         }
     }
 
-    pub(super) fn handle_interrupts(&mut self, mem: &mut Memory) -> bool {
+    pub(super) fn handle_interrupts(&mut self, bus: &mut impl CpuBus) -> bool {
         if !self.interrupts_enabled {
             return false;
         }
 
-        let pending = mem[MappedReg::Ie] & mem[MappedReg::If];
-        let bit = pending.trailing_zeros() as u16;
-        if bit > 7 {
-            // No interrupts are pending.
-            return false;
-        }
-        // Toggle off the flag bit to mark the interrupt as handled.
-        mem[MappedReg::If] ^= 1 << bit;
+        let Some(bit) = bus.pop_interrupt() else { return false; };
         // Disable interrupts inside the interrupt handler by default.
         self.di();
 
@@ -47,9 +38,9 @@ impl Cpu {
         // Bit 2: Timer    Interrupt Request (INT $50)
         // Bit 3: Serial   Interrupt Request (INT $58)
         // Bit 4: Joypad   Interrupt Request (INT $60)
-        let addr = 0x40 + bit * 0x8;
+        let addr = 0x40 + bit as u16 * 0x8;
 
-        self.call_addr(addr, mem);
+        self.call_addr(addr, bus);
 
         self.cycles_remaining = 5;
         true

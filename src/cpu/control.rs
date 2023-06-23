@@ -1,6 +1,4 @@
-use crate::memory::Memory;
-
-use super::{instruction_set::Test, Cpu, Flag, Reg16};
+use super::{instruction_set::Test, Cpu, CpuBus, Flag, Reg16};
 
 impl Cpu {
     fn test(&self, test: Test) -> bool {
@@ -12,84 +10,89 @@ impl Cpu {
         }
     }
 
-    pub(super) fn jump(&mut self, mem: &Memory) {
-        self.pc = self.read_immedate_16(mem);
+    pub(super) fn jump(&mut self, bus: &impl CpuBus) {
+        self.pc = self.read_immedate_16(bus);
     }
 
     pub(super) fn jump_hl(&mut self) {
         self.pc = self.regs[Reg16::HL];
     }
 
-    pub(super) fn jump_conditional(&mut self, test: Test, cycles: usize, mem: &Memory) {
+    pub(super) fn jump_conditional(&mut self, test: Test, cycles: usize, bus: &impl CpuBus) {
         if self.test(test) {
-            self.jump(mem);
+            self.jump(bus);
         } else {
             self.cycles_remaining = cycles;
-            self.read_immedate_16(mem);
+            self.read_immedate_16(bus);
         }
     }
 
-    pub(super) fn jump_relative(&mut self, mem: &Memory) {
-        let offset = self.read_immedate_8(mem) as i8;
+    pub(super) fn jump_relative(&mut self, bus: &impl CpuBus) {
+        let offset = self.read_immedate_8(bus) as i8;
         self.pc = self.pc.wrapping_add(offset as u16);
     }
 
-    pub(super) fn jump_relative_conditional(&mut self, test: Test, cycles: usize, mem: &Memory) {
+    pub(super) fn jump_relative_conditional(
+        &mut self,
+        test: Test,
+        cycles: usize,
+        bus: &impl CpuBus,
+    ) {
         if self.test(test) {
-            self.jump_relative(mem);
+            self.jump_relative(bus);
         } else {
             self.cycles_remaining = cycles;
-            self.read_immedate_8(mem);
+            self.read_immedate_8(bus);
         }
     }
 
-    pub(super) fn call_addr(&mut self, addr: u16, mem: &mut Memory) {
+    pub(super) fn call_addr(&mut self, addr: u16, bus: &mut impl CpuBus) {
         let sp = &mut self.regs[Reg16::SP];
         *sp = sp.wrapping_sub(2);
-        mem.write_16(*sp, self.pc);
+        bus.write_16(*sp, self.pc);
         self.pc = addr;
     }
 
-    pub(super) fn call(&mut self, mem: &mut Memory) {
-        let addr = self.read_immedate_16(mem);
-        self.call_addr(addr, mem);
+    pub(super) fn call(&mut self, bus: &mut impl CpuBus) {
+        let addr = self.read_immedate_16(bus);
+        self.call_addr(addr, bus);
     }
 
-    pub(super) fn call_conditional(&mut self, test: Test, cycles: usize, mem: &mut Memory) {
+    pub(super) fn call_conditional(&mut self, test: Test, cycles: usize, bus: &mut impl CpuBus) {
         if self.test(test) {
-            self.call(mem);
+            self.call(bus);
         } else {
             self.cycles_remaining = cycles;
-            self.read_immedate_16(mem);
+            self.read_immedate_16(bus);
         }
     }
 
-    pub(super) fn rst(&mut self, addr: u8, mem: &mut Memory) {
-        self.call_addr(addr as u16, mem);
+    pub(super) fn rst(&mut self, addr: u8, bus: &mut impl CpuBus) {
+        self.call_addr(addr as u16, bus);
     }
 
-    pub(super) fn ret(&mut self, mem: &Memory) {
+    pub(super) fn ret(&mut self, bus: &impl CpuBus) {
         let sp = &mut self.regs[Reg16::SP];
-        self.pc = mem.read_16(*sp);
+        self.pc = bus.read_16(*sp);
         *sp = sp.wrapping_add(2);
     }
 
-    pub(super) fn ret_conditional(&mut self, test: Test, cycles: usize, mem: &Memory) {
+    pub(super) fn ret_conditional(&mut self, test: Test, cycles: usize, bus: &impl CpuBus) {
         if self.test(test) {
-            self.ret(mem);
+            self.ret(bus);
         } else {
             self.cycles_remaining = cycles;
         }
     }
 
     const SPEED_REG_ADDR: u16 = 0xff4D;
-    pub(super) fn stop(&mut self, mem: &mut Memory) {
-        let _ = self.read_immedate_8(mem);
-        let mut reg = mem.read_8(Self::SPEED_REG_ADDR);
+    pub(super) fn stop(&mut self, bus: &mut impl CpuBus) {
+        let _ = self.read_immedate_8(bus);
+        let mut reg = bus.read_8(Self::SPEED_REG_ADDR);
         if reg & 0x1 != 0 {
             // TODO: Implement this more accurately
             reg ^= 0x81;
-            mem.write_8(Self::SPEED_REG_ADDR, reg);
+            bus.write_8(Self::SPEED_REG_ADDR, reg);
         } else {
             unimplemented!("STOP: low power mode");
         }

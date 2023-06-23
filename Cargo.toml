@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+partial-borrow = "1.0.1"
 pixels = "0.12.0"
 winit = "0.28.3"
 

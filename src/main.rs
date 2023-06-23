@@ -7,6 +7,7 @@ mod ppu;
 
 use dma::Dma;
 use joypad::{Button, ButtonState};
+use partial_borrow::SplitOff;
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
 use ppu::Ppu;
@@ -50,7 +51,7 @@ impl Cgb {
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
             self.ppu.execute(frame_buff, &mut self.memory);
             self.dma.execute(&mut self.memory);
-            self.cpu.execute(&mut self.memory);
+            self.cpu.execute(SplitOff::split_off_mut(&mut *self.memory).0);
             if !lcd_on && self.memory[MappedReg::Lcdc] & 0x80 != 0 {
                 return;
             }

@@ -3,7 +3,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use partial_borrow::prelude::*;
+
 use crate::{
+    cpu::CpuBus,
     dma::{DmaState, DmaType},
     joypad::{Button, ButtonState, JoypadState},
 };
@@ -93,6 +96,50 @@ struct MemoryData {
     obj_palette: PaletteRam,
 }
 
+macro_rules! impl_addr_to_ref {
+    ($name:ident $( $mut:tt )?) => {
+       fn $name(& $( $mut )* self, addr: u16, cgb_mode: bool) -> & $( $mut )* u8 {
+           match addr {
+               0x0000..=0x7fff => & $( $mut )* self.cartrige_rom[addr as usize],
+               0x8000..=0x9fff => & $( $mut )* self.vram[if cgb_mode {
+                   self[MappedReg::Vbk] as usize & 0x1
+               } else {
+                   0
+               }][addr as usize & 0x1fff],
+               0xa000..=0xbfff => & $( $mut )* self.cartrige_ram[addr as usize & 0x1fff],
+               0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.wram_low[addr as usize & 0xfff],
+               0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.wram_high[{
+                   let svbk = self[MappedReg::Svbk] as usize & 0x3;
+                   if !cgb_mode || svbk == 0 { 0 } else { svbk - 1 }
+               }][addr as usize & 0xfff],
+               0xfe00..=0xfe9f => & $( $mut )* self.oam[addr as usize & 0x9f],
+               0xfea0..=0xfeff => panic!("Attempt to access illegal memory area"),
+               0xff00..=0xffff => & $( $mut )* self.hram[addr as usize & 0xff],
+           }
+       }
+    };
+}
+
+impl MemoryData {
+    impl_addr_to_ref!(addr_to_ref);
+    impl_addr_to_ref!(addr_to_ref_mut mut);
+}
+
+impl Index<MappedReg> for MemoryData {
+    type Output = u8;
+
+    fn index(&self, reg: MappedReg) -> &Self::Output {
+        &self.hram[(reg as u16 & 0x00ff) as usize]
+    }
+}
+
+impl IndexMut<MappedReg> for MemoryData {
+    fn index_mut(&mut self, reg: MappedReg) -> &mut Self::Output {
+        &mut self.hram[(reg as u16 & 0x00ff) as usize]
+    }
+}
+
+#[derive(PartialBorrow)]
 pub struct Memory {
     mem: MemoryData,
     joypad: JoypadState,
@@ -102,7 +149,7 @@ pub struct Memory {
     pub dma_state: Option<DmaState>,
 }
 
-macro_rules! impl_addr_to_ref {
+macro_rules! impl_addr_to_ref_legacy {
     ($name:ident $( $mut:tt )?) => {
        fn $name(& $( $mut )* self, addr: u16) -> & $( $mut )* u8 {
            match addr {
@@ -177,8 +224,8 @@ impl Memory {
         &mut self.mem.obj_palette
     }
 
-    impl_addr_to_ref!(addr_to_ref);
-    impl_addr_to_ref!(addr_to_ref_mut mut);
+    impl_addr_to_ref_legacy!(addr_to_ref);
+    impl_addr_to_ref_legacy!(addr_to_ref_mut mut);
 
     pub fn read_8(&self, addr: u16) -> u8 {
         const BCPD: u16 = MappedReg::Bcpd as _;
@@ -289,5 +336,104 @@ impl Index<MappedReg> for Memory {
 impl IndexMut<MappedReg> for Memory {
     fn index_mut(&mut self, reg: MappedReg) -> &mut Self::Output {
         self.addr_to_ref_mut(reg as u16)
+    }
+}
+
+impl CpuBus for partial!(Memory mut mem boot_rom_mapped cgb_mode dma_state) {
+    fn read_8(&self, addr: u16) -> u8 {
+        const BCPD: u16 = MappedReg::Bcpd as _;
+        const OCPD: u16 = MappedReg::Ocpd as _;
+        const P1: u16 = MappedReg::P1 as _;
+        match addr {
+            0x0000..=0x00ff | 0x0200..=0x08ff if *self.boot_rom_mapped => BOOT_ROM[addr as usize],
+            0xfea0..=0xfeff => {
+                // CGB-E prohibited area reads, according to pandocs
+                let low = addr as u8 & 0x0f;
+                low << 4 | low
+            }
+            BCPD if *self.cgb_mode => {
+                self.mem.bg_palette[(self.mem[MappedReg::Bcps] & 0x3f) as usize]
+            }
+            OCPD if *self.cgb_mode => {
+                self.mem.obj_palette[(self.mem[MappedReg::Ocps] & 0x3f) as usize]
+            }
+            P1 => {
+                let p1 = self[MappedReg::P1];
+
+                let mut bits = 0;
+                if (p1 >> 4) & 0x1 == 0 {
+                    bits |= self.joypad.direction_bits();
+                }
+                if (p1 >> 5) & 0x1 == 0 {
+                    bits |= self.joypad.action_bits();
+                }
+
+                p1 & 0xf0 | !bits & 0x0f
+            }
+            _ => *self.mem.addr_to_ref(addr, *self.cgb_mode),
+        }
+    }
+
+    fn write_8(&mut self, addr: u16, val: u8) {
+        const BCPD: u16 = MappedReg::Bcpd as _;
+        const OCPD: u16 = MappedReg::Ocpd as _;
+        const BANK: u16 = MappedReg::Bank as _;
+        const DMA: u16 = MappedReg::Dma as _;
+        const HDMA5: u16 = MappedReg::Hdma5 as _;
+        match addr {
+            0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
+            BCPD if *self.cgb_mode => {
+                let bcps = self.mem[MappedReg::Bcps];
+                self.mem.bg_palette[(bcps & 0x3f) as usize] = val;
+                Memory::auto_inc_cps(&mut self.mem[MappedReg::Bcps]);
+            }
+            OCPD if *self.cgb_mode => {
+                let ocps = self.mem[MappedReg::Ocps];
+                self.mem.obj_palette[(ocps & 0x3f) as usize] = val;
+                Memory::auto_inc_cps(&mut self.mem[MappedReg::Ocps]);
+            }
+            HDMA5 if *self.cgb_mode => {
+                if val >> 7 != 0 {
+                    todo!("HBlank DMA");
+                }
+                // TODO: Do some kind of cancel of an ongoing OAM DMA for simplicity
+                *self.dma_state = Some(DmaState {
+                    ty: DmaType::General,
+                    len: ((val & 0x7f) as u16).wrapping_add(1) * 16,
+                    count: 0,
+                    oam_src: 0,
+                });
+            }
+            DMA => {
+                // TODO: Do some kind of cancel of an ongoing HDMA for simplicity
+                *self.dma_state = Some(DmaState {
+                    ty: DmaType::Oam,
+                    len: 0xa0,
+                    count: 0,
+                    oam_src: (val as u16) << 8,
+                });
+            }
+            BANK if *self.boot_rom_mapped => {
+                *self.boot_rom_mapped = false;
+                *self.cgb_mode = self[MappedReg::Key0] != NON_CGB_KEY0_VAL;
+            }
+            _ => *self.mem.addr_to_ref_mut(addr, *self.cgb_mode) = val,
+        }
+    }
+
+    fn cpu_dma_paused(&self) -> bool {
+        *self.cpu_dma_paused
+    }
+
+    fn pop_interrupt(&mut self) -> Option<u8> {
+        let pending = self[MappedReg::Ie] & self[MappedReg::If];
+        let bit = pending.trailing_zeros() as u8;
+        if bit > 7 {
+            // No interrupts are pending.
+            return None;
+        }
+        // Toggle off the flag bit to mark the interrupt as handled.
+        self.mem[MappedReg::If] ^= 1 << bit;
+        Some(bit)
     }
 }
