@@ -5,7 +5,6 @@ mod joypad;
 mod ppu;
 mod system;
 
-use dma::Dma;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
@@ -22,7 +21,6 @@ use system::{CgbSystem, MappedReg};
 struct Cgb {
     system: Box<CgbSystem>,
     ppu: Ppu,
-    dma: Dma,
 }
 type FrameBuffer = [[[u8; 4]; Cgb::SCREEN_WIDTH]; Cgb::SCREEN_HEIGHT];
 
@@ -40,14 +38,15 @@ impl Cgb {
 
         let mut system = CgbSystem::new(rom);
 
-        Self { ppu: Ppu::new(&mut system), system, dma: Dma::new() }
+        Self { ppu: Ppu::new(&mut system), system }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
         let lcd_on = self.system[MappedReg::Lcdc] & 0x80 != 0;
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
             self.ppu.execute(frame_buff, &mut self.system);
-            self.dma.execute(&mut self.system);
+            let (dma, bus) = self.system.split_dma();
+            dma.execute(bus);
             let (cpu, bus) = self.system.split_cpu();
             cpu.execute(bus);
             if !lcd_on && self.system[MappedReg::Lcdc] & 0x80 != 0 {
