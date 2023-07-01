@@ -1,4 +1,4 @@
-use crate::memory::{MappedReg, Memory};
+use crate::system::{CgbSystem, MappedReg};
 
 pub enum DmaType {
     Oam,
@@ -19,7 +19,7 @@ impl Dma {
         Self
     }
 
-    pub fn execute(&mut self, mem: &mut Memory) {
+    pub fn execute(&mut self, mem: &mut CgbSystem) {
         let Some(state) = &mem.dma_state else { return; };
 
         match state.ty {

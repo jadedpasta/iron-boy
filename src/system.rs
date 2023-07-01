@@ -140,7 +140,7 @@ impl IndexMut<MappedReg> for MemoryData {
 }
 
 #[derive(PartialBorrow)]
-pub struct Memory {
+pub struct CgbSystem {
     mem: MemoryData,
     joypad: JoypadState,
     boot_rom_mapped: bool,
@@ -173,10 +173,10 @@ macro_rules! impl_addr_to_ref_legacy {
     };
 }
 
-impl Memory {
+impl CgbSystem {
     pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
         let mut rom = rom.into();
-        let mut mem = Box::new(Memory {
+        let mut system = Box::new(CgbSystem {
             // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
             mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
             joypad: JoypadState::new(),
@@ -185,9 +185,9 @@ impl Memory {
             cpu_dma_paused: false,
             dma_state: None,
         });
-        rom.resize(mem::size_of_val(&mem.mem.cartrige_rom), 0);
-        mem.mem.cartrige_rom.copy_from_slice(&rom[..]);
-        mem
+        rom.resize(mem::size_of_val(&system.mem.cartrige_rom), 0);
+        system.mem.cartrige_rom.copy_from_slice(&rom[..]);
+        system
     }
 
     pub fn vram(&self) -> &VRam {
@@ -325,7 +325,7 @@ impl Memory {
     }
 }
 
-impl Index<MappedReg> for Memory {
+impl Index<MappedReg> for CgbSystem {
     type Output = u8;
 
     fn index(&self, reg: MappedReg) -> &Self::Output {
@@ -333,13 +333,13 @@ impl Index<MappedReg> for Memory {
     }
 }
 
-impl IndexMut<MappedReg> for Memory {
+impl IndexMut<MappedReg> for CgbSystem {
     fn index_mut(&mut self, reg: MappedReg) -> &mut Self::Output {
         self.addr_to_ref_mut(reg as u16)
     }
 }
 
-impl CpuBus for partial!(Memory mut mem boot_rom_mapped cgb_mode dma_state) {
+impl CpuBus for partial!(CgbSystem mut mem boot_rom_mapped cgb_mode dma_state) {
     fn read_8(&self, addr: u16) -> u8 {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
@@ -385,12 +385,12 @@ impl CpuBus for partial!(Memory mut mem boot_rom_mapped cgb_mode dma_state) {
             BCPD if *self.cgb_mode => {
                 let bcps = self.mem[MappedReg::Bcps];
                 self.mem.bg_palette[(bcps & 0x3f) as usize] = val;
-                Memory::auto_inc_cps(&mut self.mem[MappedReg::Bcps]);
+                CgbSystem::auto_inc_cps(&mut self.mem[MappedReg::Bcps]);
             }
             OCPD if *self.cgb_mode => {
                 let ocps = self.mem[MappedReg::Ocps];
                 self.mem.obj_palette[(ocps & 0x3f) as usize] = val;
-                Memory::auto_inc_cps(&mut self.mem[MappedReg::Ocps]);
+                CgbSystem::auto_inc_cps(&mut self.mem[MappedReg::Ocps]);
             }
             HDMA5 if *self.cgb_mode => {
                 if val >> 7 != 0 {

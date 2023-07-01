@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::{
     interrupt::Interrupt,
-    memory::{MappedReg, Memory, Oam, PaletteRam},
+    system::{CgbSystem, MappedReg, Oam, PaletteRam},
     Cgb, FrameBuffer,
 };
 
@@ -60,7 +60,7 @@ struct BgPixel {
 }
 
 impl Ppu {
-    pub fn new(mem: &mut Memory) -> Self {
+    pub fn new(mem: &mut CgbSystem) -> Self {
         let mode_state = ModeState::default();
         let mut result = Self { mode_cycles_remaining: mode_state.cycles(), mode_state, ly: 0 };
         // Registers should be given initial values on startup. Not sure how actual hardware
@@ -69,7 +69,7 @@ impl Ppu {
         result
     }
 
-    fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, mem: &Memory) -> BgPixel {
+    fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, mem: &CgbSystem) -> BgPixel {
         let lcdc = mem[MappedReg::Lcdc];
         let scx = mem[MappedReg::Scx];
         let vram = mem.vram();
@@ -110,7 +110,7 @@ impl Ppu {
         obj_target_y: u8,
         selected_objs: &Vec<usize>,
         objs: &Objs,
-        mem: &Memory,
+        mem: &CgbSystem,
     ) -> Option<ObjPixel> {
         let lcdc = mem[MappedReg::Lcdc];
 
@@ -162,7 +162,7 @@ impl Ppu {
         })
     }
 
-    fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, mem: &Memory) -> u16 {
+    fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, mem: &CgbSystem) -> u16 {
         let lcdc = mem[MappedReg::Lcdc];
         let bg_palettes = ram_to_palettes(&mem.bg_palette_ram());
         let obj_palettes = ram_to_palettes(&mem.obj_palette_ram());
@@ -209,7 +209,7 @@ impl Ppu {
         u16::from_le_bytes(palette[color as usize])
     }
 
-    fn draw_scanline(&self, frame_buff: &mut FrameBuffer, mem: &Memory) {
+    fn draw_scanline(&self, frame_buff: &mut FrameBuffer, mem: &CgbSystem) {
         let lcdc = mem[MappedReg::Lcdc];
 
         // OAM Search
@@ -253,12 +253,12 @@ impl Ppu {
         self.mode_state = mode;
     }
 
-    fn update_control_regs(&mut self, mem: &mut Memory) {
+    fn update_control_regs(&mut self, mem: &mut CgbSystem) {
         mem[MappedReg::Ly] = self.ly;
         mem[MappedReg::Stat] = self.mode_state as u8;
     }
 
-    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut Memory) {
+    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut CgbSystem) {
         let lcdc = mem[MappedReg::Lcdc];
         let lcd_enabled = lcdc & 0x80 != 0;
 
@@ -312,19 +312,19 @@ impl Ppu {
 mod tests {
     use std::{iter::repeat, mem::MaybeUninit};
 
-    use crate::memory::VRam;
+    use crate::system::VRam;
 
     use super::*;
 
     struct Context {
         ppu: Ppu,
-        mem: Box<Memory>,
+        mem: Box<CgbSystem>,
         frame_buff: FrameBuffer,
     }
 
     impl Context {
         fn new(vram_init: impl FnOnce(&mut VRam)) -> Self {
-            let mut mem = Memory::new([]);
+            let mut mem = CgbSystem::new([]);
             vram_init(mem.vram_mut());
             let bg_palette_ram = mem.bg_palette_ram_mut();
             let palette: Vec<u8> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]

@@ -2,8 +2,8 @@ mod cpu;
 mod dma;
 mod interrupt;
 mod joypad;
-mod memory;
 mod ppu;
+mod system;
 
 use dma::Dma;
 use joypad::{Button, ButtonState};
@@ -19,10 +19,10 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 use cpu::Cpu;
-use memory::{MappedReg, Memory};
+use system::{CgbSystem, MappedReg};
 
 struct Cgb {
-    memory: Box<Memory>,
+    system: Box<CgbSystem>,
     cpu: Cpu,
     ppu: Ppu,
     dma: Dma,
@@ -41,18 +41,18 @@ impl Cgb {
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
 
-        let mut memory = Memory::new(rom);
+        let mut system = CgbSystem::new(rom);
 
-        Self { ppu: Ppu::new(&mut memory), memory, cpu: Cpu::default(), dma: Dma::new() }
+        Self { ppu: Ppu::new(&mut system), system, cpu: Cpu::default(), dma: Dma::new() }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
-        let lcd_on = self.memory[MappedReg::Lcdc] & 0x80 != 0;
+        let lcd_on = self.system[MappedReg::Lcdc] & 0x80 != 0;
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
-            self.ppu.execute(frame_buff, &mut self.memory);
-            self.dma.execute(&mut self.memory);
-            self.cpu.execute(SplitOff::split_off_mut(&mut *self.memory).0);
-            if !lcd_on && self.memory[MappedReg::Lcdc] & 0x80 != 0 {
+            self.ppu.execute(frame_buff, &mut self.system);
+            self.dma.execute(&mut self.system);
+            self.cpu.execute(SplitOff::split_off_mut(&mut *self.system).0);
+            if !lcd_on && self.system[MappedReg::Lcdc] & 0x80 != 0 {
                 return;
             }
         }
@@ -64,7 +64,7 @@ impl Cgb {
     }
 
     fn handle_joypad(&mut self, button: Button, state: ButtonState) {
-        self.memory.handle_joypad(button, state);
+        self.system.handle_joypad(button, state);
     }
 }
 
