@@ -7,7 +7,6 @@ mod system;
 
 use dma::Dma;
 use joypad::{Button, ButtonState};
-use partial_borrow::SplitOff;
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
 use ppu::Ppu;
@@ -18,12 +17,10 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-use cpu::Cpu;
 use system::{CgbSystem, MappedReg};
 
 struct Cgb {
     system: Box<CgbSystem>,
-    cpu: Cpu,
     ppu: Ppu,
     dma: Dma,
 }
@@ -43,7 +40,7 @@ impl Cgb {
 
         let mut system = CgbSystem::new(rom);
 
-        Self { ppu: Ppu::new(&mut system), system, cpu: Cpu::default(), dma: Dma::new() }
+        Self { ppu: Ppu::new(&mut system), system, dma: Dma::new() }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
@@ -51,7 +48,8 @@ impl Cgb {
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
             self.ppu.execute(frame_buff, &mut self.system);
             self.dma.execute(&mut self.system);
-            self.cpu.execute(SplitOff::split_off_mut(&mut *self.system).0);
+            let (cpu, bus) = self.system.split_cpu();
+            cpu.execute(bus);
             if !lcd_on && self.system[MappedReg::Lcdc] & 0x80 != 0 {
                 return;
             }

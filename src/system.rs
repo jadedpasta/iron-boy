@@ -3,10 +3,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use partial_borrow::prelude::*;
+use partial_borrow::{prelude::*, SplitOff};
 
 use crate::{
-    cpu::CpuBus,
+    cpu::{Cpu, CpuBus},
     dma::{DmaState, DmaType},
     joypad::{Button, ButtonState, JoypadState},
 };
@@ -141,6 +141,7 @@ impl IndexMut<MappedReg> for MemoryData {
 
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
+    cpu: Cpu,
     mem: MemoryData,
     joypad: JoypadState,
     boot_rom_mapped: bool,
@@ -177,6 +178,7 @@ impl CgbSystem {
     pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
         let mut rom = rom.into();
         let mut system = Box::new(CgbSystem {
+            cpu: Cpu::default(),
             // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
             mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
             joypad: JoypadState::new(),
@@ -188,6 +190,11 @@ impl CgbSystem {
         rom.resize(mem::size_of_val(&system.mem.cartrige_rom), 0);
         system.mem.cartrige_rom.copy_from_slice(&rom[..]);
         system
+    }
+
+    pub fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
+        let (bus, system) = SplitOff::split_off_mut(self);
+        return (&mut system.cpu, bus);
     }
 
     pub fn vram(&self) -> &VRam {
@@ -339,7 +346,7 @@ impl IndexMut<MappedReg> for CgbSystem {
     }
 }
 
-impl CpuBus for partial!(CgbSystem mut mem boot_rom_mapped cgb_mode dma_state) {
+impl CpuBus for partial!(CgbSystem ! cpu, mut mem boot_rom_mapped cgb_mode dma_state) {
     fn read_8(&self, addr: u16) -> u8 {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
@@ -358,7 +365,7 @@ impl CpuBus for partial!(CgbSystem mut mem boot_rom_mapped cgb_mode dma_state) {
                 self.mem.obj_palette[(self.mem[MappedReg::Ocps] & 0x3f) as usize]
             }
             P1 => {
-                let p1 = self[MappedReg::P1];
+                let p1 = self.mem[MappedReg::P1];
 
                 let mut bits = 0;
                 if (p1 >> 4) & 0x1 == 0 {
@@ -415,7 +422,7 @@ impl CpuBus for partial!(CgbSystem mut mem boot_rom_mapped cgb_mode dma_state) {
             }
             BANK if *self.boot_rom_mapped => {
                 *self.boot_rom_mapped = false;
-                *self.cgb_mode = self[MappedReg::Key0] != NON_CGB_KEY0_VAL;
+                *self.cgb_mode = self.mem[MappedReg::Key0] != NON_CGB_KEY0_VAL;
             }
             _ => *self.mem.addr_to_ref_mut(addr, *self.cgb_mode) = val,
         }
@@ -426,7 +433,7 @@ impl CpuBus for partial!(CgbSystem mut mem boot_rom_mapped cgb_mode dma_state) {
     }
 
     fn pop_interrupt(&mut self) -> Option<u8> {
-        let pending = self[MappedReg::Ie] & self[MappedReg::If];
+        let pending = self.mem[MappedReg::Ie] & self.mem[MappedReg::If];
         let bit = pending.trailing_zeros() as u8;
         if bit > 7 {
             // No interrupts are pending.
