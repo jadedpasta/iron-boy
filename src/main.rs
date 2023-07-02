@@ -8,7 +8,6 @@ mod system;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
-use ppu::Ppu;
 use std::time::{Duration, Instant};
 use std::{env, fs, mem};
 use winit::dpi::LogicalSize;
@@ -16,11 +15,10 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-use system::{CgbSystem, MappedReg};
+use system::CgbSystem;
 
 struct Cgb {
     system: Box<CgbSystem>,
-    ppu: Ppu,
 }
 type FrameBuffer = [[[u8; 4]; Cgb::SCREEN_WIDTH]; Cgb::SCREEN_HEIGHT];
 
@@ -35,21 +33,19 @@ impl Cgb {
 
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
-
-        let mut system = CgbSystem::new(rom);
-
-        Self { ppu: Ppu::new(&mut system), system }
+        Self { system: CgbSystem::new(rom) }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
-        let lcd_on = self.system[MappedReg::Lcdc] & 0x80 != 0;
+        let lcd_on = self.system.lcd_on();
         for _ in 0..Self::DOTS_PER_FRAME / 4 {
-            self.ppu.execute(frame_buff, &mut self.system);
+            let (ppu, bus) = self.system.split_ppu();
+            ppu.execute(frame_buff, bus);
             let (dma, bus) = self.system.split_dma();
             dma.execute(bus);
             let (cpu, bus) = self.system.split_cpu();
             cpu.execute(bus);
-            if !lcd_on && self.system[MappedReg::Lcdc] & 0x80 != 0 {
+            if !lcd_on && self.system.lcd_on() {
                 return;
             }
         }

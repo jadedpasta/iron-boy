@@ -8,7 +8,9 @@ use partial_borrow::{prelude::*, SplitOff};
 use crate::{
     cpu::{Cpu, CpuBus},
     dma::{Dma, DmaBus},
+    interrupt::Interrupt,
     joypad::{Button, ButtonState, JoypadState},
+    ppu::{Ppu, PpuBus},
 };
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
@@ -142,35 +144,12 @@ impl IndexMut<MappedReg> for MemoryData {
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
     cpu: Cpu,
+    ppu: Ppu,
     dma: Dma,
     mem: MemoryData,
     joypad: JoypadState,
     boot_rom_mapped: bool,
     cgb_mode: bool,
-}
-
-macro_rules! impl_addr_to_ref_legacy {
-    ($name:ident $( $mut:tt )?) => {
-       fn $name(& $( $mut )* self, addr: u16) -> & $( $mut )* u8 {
-           match addr {
-               0x0000..=0x7fff => & $( $mut )* self.mem.cartrige_rom[addr as usize],
-               0x8000..=0x9fff => & $( $mut )* self.mem.vram[if self.cgb_mode {
-                   self[MappedReg::Vbk] as usize & 0x1
-               } else {
-                   0
-               }][addr as usize & 0x1fff],
-               0xa000..=0xbfff => & $( $mut )* self.mem.cartrige_ram[addr as usize & 0x1fff],
-               0xc000..=0xcfff | 0xe000..=0xefff => & $( $mut )* self.mem.wram_low[addr as usize & 0xfff],
-               0xd000..=0xdfff | 0xf000..=0xfdff => & $( $mut )* self.mem.wram_high[{
-                   let svbk = self[MappedReg::Svbk] as usize & 0x3;
-                   if !self.cgb_mode || svbk == 0 { 0 } else { svbk - 1 }
-               }][addr as usize & 0xfff],
-               0xfe00..=0xfe9f => & $( $mut )* self.mem.oam[addr as usize & 0x9f],
-               0xfea0..=0xfeff => panic!("Attempt to access illegal memory area"),
-               0xff00..=0xffff => & $( $mut )* self.mem.hram[addr as usize & 0xff],
-           }
-       }
-    };
 }
 
 impl CgbSystem {
@@ -179,12 +158,19 @@ impl CgbSystem {
         let mut system = Box::new(CgbSystem {
             cpu: Cpu::default(),
             dma: Dma::new(),
+            ppu: Ppu::new(),
             // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
             mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
             joypad: JoypadState::new(),
             boot_rom_mapped: true,
             cgb_mode: true,
         });
+
+        // Registers should be given initial values on startup. Not sure how actual hardware
+        // behaves, but this is nice for an emulator.
+        let (ppu, bus) = system.split_ppu();
+        ppu.update_control_regs(bus);
+
         rom.resize(mem::size_of_val(&system.mem.cartrige_rom), 0);
         system.mem.cartrige_rom.copy_from_slice(&rom[..]);
         system
@@ -195,44 +181,19 @@ impl CgbSystem {
         return (&mut system.cpu, bus);
     }
 
+    pub fn split_ppu(&mut self) -> (&mut Ppu, &mut impl PpuBus) {
+        let (bus, system) = SplitOff::split_off_mut(self);
+        return (&mut system.ppu, bus);
+    }
+
     pub fn split_dma(&mut self) -> (&mut Dma, &mut impl DmaBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         return (&mut system.dma, bus);
     }
 
-    pub fn vram(&self) -> &VRam {
-        &self.mem.vram
+    pub fn lcd_on(&self) -> bool {
+        self.mem[MappedReg::Lcdc] & 0x80 != 0
     }
-
-    pub fn oam(&self) -> &Oam {
-        &self.mem.oam
-    }
-
-    pub fn bg_palette_ram(&self) -> &PaletteRam {
-        &self.mem.bg_palette
-    }
-
-    pub fn obj_palette_ram(&self) -> &PaletteRam {
-        &self.mem.obj_palette
-    }
-
-    #[cfg(test)]
-    pub fn vram_mut(&mut self) -> &mut VRam {
-        &mut self.mem.vram
-    }
-
-    #[cfg(test)]
-    pub fn bg_palette_ram_mut(&mut self) -> &mut PaletteRam {
-        &mut self.mem.bg_palette
-    }
-
-    #[cfg(test)]
-    pub fn obj_palette_ram_mut(&mut self) -> &mut PaletteRam {
-        &mut self.mem.obj_palette
-    }
-
-    impl_addr_to_ref_legacy!(addr_to_ref);
-    impl_addr_to_ref_legacy!(addr_to_ref_mut mut);
 
     fn auto_inc_cps(cps: &mut u8) {
         *cps = (*cps & 0xc0) | cps.wrapping_add(*cps >> 7) & 0x3f;
@@ -240,24 +201,6 @@ impl CgbSystem {
 
     pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
         self.joypad.handle(button, state);
-    }
-
-    pub fn cgb_mode(&self) -> bool {
-        self.cgb_mode
-    }
-}
-
-impl Index<MappedReg> for CgbSystem {
-    type Output = u8;
-
-    fn index(&self, reg: MappedReg) -> &Self::Output {
-        self.addr_to_ref(reg as u16)
-    }
-}
-
-impl IndexMut<MappedReg> for CgbSystem {
-    fn index_mut(&mut self, reg: MappedReg) -> &mut Self::Output {
-        self.addr_to_ref_mut(reg as u16)
     }
 }
 
@@ -347,6 +290,64 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) 
         // Toggle off the flag bit to mark the interrupt as handled.
         self.mem[MappedReg::If] ^= 1 << bit;
         Some(bit)
+    }
+}
+
+impl PpuBus for partial!(CgbSystem ! ppu, mut mem) {
+    fn lcdc(&self) -> u8 {
+        self.mem[MappedReg::Lcdc]
+    }
+
+    fn scx(&self) -> u8 {
+        self.mem[MappedReg::Scx]
+    }
+
+    fn scy(&self) -> u8 {
+        self.mem[MappedReg::Scy]
+    }
+
+    fn bgp(&self) -> u8 {
+        self.mem[MappedReg::Bgp]
+    }
+
+    fn obp0(&self) -> u8 {
+        self.mem[MappedReg::Obp0]
+    }
+
+    fn obp1(&self) -> u8 {
+        self.mem[MappedReg::Obp1]
+    }
+
+    fn set_ly(&mut self, ly: u8) {
+        self.mem[MappedReg::Ly] = ly;
+    }
+
+    fn set_stat(&mut self, stat: u8) {
+        self.mem[MappedReg::Stat] = stat;
+    }
+
+    fn trigger_vblank_interrupt(&mut self) {
+        Interrupt::VBlank.request(&mut self.mem[MappedReg::If]);
+    }
+
+    fn vram(&self) -> &VRam {
+        &self.mem.vram
+    }
+
+    fn bg_palette_ram(&self) -> &PaletteRam {
+        &self.mem.bg_palette
+    }
+
+    fn obj_palette_ram(&self) -> &PaletteRam {
+        &self.mem.obj_palette
+    }
+
+    fn oam(&self) -> &Oam {
+        &self.mem.oam
+    }
+
+    fn cgb_mode(&self) -> bool {
+        *self.cgb_mode
     }
 }
 

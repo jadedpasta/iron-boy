@@ -1,5 +1,3 @@
-use crate::system::{CgbSystem, MappedReg};
-
 #[derive(Debug, Clone, Copy)]
 pub enum Interrupt {
     VBlank = 0,
@@ -10,7 +8,7 @@ pub enum Interrupt {
 }
 
 impl Interrupt {
-    pub fn request(self, mem: &mut CgbSystem) {
-        mem[MappedReg::If] |= 1 << self as usize;
+    pub fn request(self, if_reg: &mut u8) {
+        *if_reg |= 1 << self as usize;
     }
 }

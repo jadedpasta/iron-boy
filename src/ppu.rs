@@ -1,8 +1,7 @@
 use std::mem;
 
 use crate::{
-    interrupt::Interrupt,
-    system::{CgbSystem, MappedReg, Oam, PaletteRam},
+    system::{Oam, PaletteRam, VRam},
     Cgb, FrameBuffer,
 };
 
@@ -24,6 +23,25 @@ impl ModeState {
             Self::VBlank => 114,
         }
     }
+}
+
+pub trait PpuBus {
+    fn lcdc(&self) -> u8;
+    fn scx(&self) -> u8;
+    fn scy(&self) -> u8;
+    fn bgp(&self) -> u8;
+    fn obp0(&self) -> u8;
+    fn obp1(&self) -> u8;
+
+    fn set_ly(&mut self, ly: u8);
+    fn set_stat(&mut self, stat: u8);
+    fn trigger_vblank_interrupt(&mut self);
+
+    fn vram(&self) -> &VRam;
+    fn bg_palette_ram(&self) -> &PaletteRam;
+    fn obj_palette_ram(&self) -> &PaletteRam;
+    fn oam(&self) -> &Oam;
+    fn cgb_mode(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -60,19 +78,15 @@ struct BgPixel {
 }
 
 impl Ppu {
-    pub fn new(mem: &mut CgbSystem) -> Self {
+    pub fn new() -> Self {
         let mode_state = ModeState::default();
-        let mut result = Self { mode_cycles_remaining: mode_state.cycles(), mode_state, ly: 0 };
-        // Registers should be given initial values on startup. Not sure how actual hardware
-        // behaves, but this is nice for an emulator.
-        result.update_control_regs(mem);
-        result
+        Self { mode_cycles_remaining: mode_state.cycles(), mode_state, ly: 0 }
     }
 
-    fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, mem: &CgbSystem) -> BgPixel {
-        let lcdc = mem[MappedReg::Lcdc];
-        let scx = mem[MappedReg::Scx];
-        let vram = mem.vram();
+    fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, bus: &impl PpuBus) -> BgPixel {
+        let lcdc = bus.lcdc();
+        let scx = bus.scx();
+        let vram = bus.vram();
 
         let pixel_x = lx.wrapping_add(scx);
         // Compute the tilemap address
@@ -89,7 +103,7 @@ impl Ppu {
         let vram_addr = ((addr_mode_bit as usize) << 12)
             | ((tile_id as usize) << 4)
             | ((y_offset as usize) << 1);
-        let bank = mem.cgb_mode() as u8 & (attributes >> 3) & 0x1;
+        let bank = bus.cgb_mode() as u8 & (attributes >> 3) & 0x1;
         let vram_bank = &vram[bank as usize];
         let color_low = vram_bank[vram_addr];
         let color_high = vram_bank[vram_addr + 1];
@@ -100,7 +114,7 @@ impl Ppu {
         let color_high = (color_high >> color_bit) & 0x1;
         let color = (color_high << 1) | color_low;
 
-        let palette = if mem.cgb_mode() { attributes & 0x7 } else { 0 };
+        let palette = if bus.cgb_mode() { attributes & 0x7 } else { 0 };
         BgPixel { color, palette, bg_over_obj: attributes & 0x80 != 0 }
     }
 
@@ -110,16 +124,16 @@ impl Ppu {
         obj_target_y: u8,
         selected_objs: &Vec<usize>,
         objs: &Objs,
-        mem: &CgbSystem,
+        bus: &impl PpuBus,
     ) -> Option<ObjPixel> {
-        let lcdc = mem[MappedReg::Lcdc];
+        let lcdc = bus.lcdc();
 
         if lcdc & 0x2 == 0 {
             // OBJ is disabled
             return None;
         }
 
-        let vram = mem.vram();
+        let vram = bus.vram();
         let target = lx + 8;
 
         let Some(obj) = selected_objs
@@ -144,7 +158,7 @@ impl Ppu {
         }
 
         let vram_addr = ((tile_id as usize) << 4) | ((y_offset as usize) << 1);
-        let vram_bank = &vram[if mem.cgb_mode() { (obj[3] >> 3) as usize & 0x1 } else { 0 }];
+        let vram_bank = &vram[if bus.cgb_mode() { (obj[3] >> 3) as usize & 0x1 } else { 0 }];
         let color_low = vram_bank[vram_addr];
         let color_high = vram_bank[vram_addr + 1];
 
@@ -157,34 +171,30 @@ impl Ppu {
         let color = (color_high << 1) | color_low;
         Some(ObjPixel {
             color,
-            palette: if mem.cgb_mode() { obj[3] & 0x7 } else { (obj[3] >> 4) & 0x1 },
+            palette: if bus.cgb_mode() { obj[3] & 0x7 } else { (obj[3] >> 4) & 0x1 },
             bg_over_obj: obj[3] & 0x80 != 0,
         })
     }
 
-    fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, mem: &CgbSystem) -> u16 {
-        let lcdc = mem[MappedReg::Lcdc];
-        let bg_palettes = ram_to_palettes(&mem.bg_palette_ram());
-        let obj_palettes = ram_to_palettes(&mem.obj_palette_ram());
+    fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, bus: &impl PpuBus) -> u16 {
+        let lcdc = bus.lcdc();
+        let bg_palettes = ram_to_palettes(&bus.bg_palette_ram());
+        let obj_palettes = ram_to_palettes(&bus.obj_palette_ram());
 
         let bg_enable_pri = lcdc & 0x1 != 0;
         if let Some(obj_pixel) = obj_pixel {
             let obj_priority = obj_pixel.color != 0
                 && (bg_pixel.color == 0
-                    || if mem.cgb_mode() {
+                    || if bus.cgb_mode() {
                         !bg_enable_pri || !bg_pixel.bg_over_obj && !obj_pixel.bg_over_obj
                     } else {
                         !obj_pixel.bg_over_obj
                     });
             if obj_priority {
-                let (color, palette) = if mem.cgb_mode() {
+                let (color, palette) = if bus.cgb_mode() {
                     (obj_pixel.color, obj_pixel.palette)
                 } else {
-                    let obp = if obj_pixel.palette == 0 {
-                        mem[MappedReg::Obp0]
-                    } else {
-                        mem[MappedReg::Obp1]
-                    };
+                    let obp = if obj_pixel.palette == 0 { bus.obp0() } else { bus.obp1() };
                     ((obp >> (obj_pixel.color * 2)) & 0x3, obj_pixel.palette)
                 };
 
@@ -193,15 +203,15 @@ impl Ppu {
             }
         }
 
-        if !mem.cgb_mode() && !bg_enable_pri {
+        if !bus.cgb_mode() && !bg_enable_pri {
             // BG disabled; display as white
             return 0x7fff;
         }
 
-        let color = if mem.cgb_mode() {
+        let color = if bus.cgb_mode() {
             bg_pixel.color
         } else {
-            let bgp = mem[MappedReg::Bgp];
+            let bgp = bus.bgp();
             (bgp >> (bg_pixel.color * 2)) & 0x3
         };
 
@@ -209,11 +219,11 @@ impl Ppu {
         u16::from_le_bytes(palette[color as usize])
     }
 
-    fn draw_scanline(&self, frame_buff: &mut FrameBuffer, mem: &CgbSystem) {
-        let lcdc = mem[MappedReg::Lcdc];
+    fn draw_scanline(&self, frame_buff: &mut FrameBuffer, bus: &impl PpuBus) {
+        let lcdc = bus.lcdc();
 
         // OAM Search
-        let objs = ram_to_objs(mem.oam());
+        let objs = ram_to_objs(bus.oam());
         let height = (((lcdc >> 2) & 0x1) + 1) * 8; // 8 or 16
         let obj_target_y = self.ly + 16;
         let mut selected_objs: Vec<usize> = objs
@@ -224,21 +234,21 @@ impl Ppu {
             .take(10)
             .collect();
 
-        if !mem.cgb_mode() {
+        if !bus.cgb_mode() {
             // In compatibility mode, objs with smaller x-coordinate have higher priority. A stable
             // sort is required.
             selected_objs.sort_by_key(|i| objs[*i][1]);
         }
 
-        let scy = mem[MappedReg::Scy];
+        let scy = bus.scy();
         let pixel_y = self.ly.wrapping_add(scy);
         let tile_y = pixel_y / 8;
         for lx in 0..Cgb::SCREEN_WIDTH as u8 {
-            let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, objs, mem);
+            let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, objs, bus);
 
-            let bg_pixel = self.fetch_bg_pixel(lx, pixel_y, tile_y, mem);
+            let bg_pixel = self.fetch_bg_pixel(lx, pixel_y, tile_y, bus);
 
-            let color = self.mix_pixels(bg_pixel, obj_pixel, mem);
+            let color = self.mix_pixels(bg_pixel, obj_pixel, bus);
 
             let mask_rescale = |c| ((c & 0x1f) * 0xff / 0x1f) as u8;
             let red = mask_rescale(color);
@@ -253,13 +263,13 @@ impl Ppu {
         self.mode_state = mode;
     }
 
-    fn update_control_regs(&mut self, mem: &mut CgbSystem) {
-        mem[MappedReg::Ly] = self.ly;
-        mem[MappedReg::Stat] = self.mode_state as u8;
+    pub fn update_control_regs(&self, bus: &mut impl PpuBus) {
+        bus.set_ly(self.ly);
+        bus.set_stat(self.mode_state as u8);
     }
 
-    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, mem: &mut CgbSystem) {
-        let lcdc = mem[MappedReg::Lcdc];
+    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
+        let lcdc = bus.lcdc();
         let lcd_enabled = lcdc & 0x80 != 0;
 
         if !lcd_enabled {
@@ -267,7 +277,7 @@ impl Ppu {
             self.ly = 0;
             self.mode_state = ModeState::OamSearch;
             self.mode_cycles_remaining = self.mode_state.cycles();
-            self.update_control_regs(mem);
+            self.update_control_regs(bus);
             return;
         }
 
@@ -281,13 +291,13 @@ impl Ppu {
         match self.mode_state {
             ModeState::OamSearch => self.mode_state = ModeState::Transfer,
             ModeState::Transfer => {
-                self.draw_scanline(frame_buff, mem);
+                self.draw_scanline(frame_buff, bus);
                 self.switch_mode(ModeState::HBlank);
             }
             ModeState::HBlank => {
                 self.ly += 1;
                 self.switch_mode(if self.ly == Cgb::SCREEN_HEIGHT as u8 {
-                    Interrupt::VBlank.request(mem);
+                    bus.trigger_vblank_interrupt();
                     ModeState::VBlank
                 } else {
                     ModeState::OamSearch
@@ -304,7 +314,7 @@ impl Ppu {
             }
         }
 
-        self.update_control_regs(mem);
+        self.update_control_regs(bus);
     }
 }
 
@@ -316,33 +326,122 @@ mod tests {
 
     use super::*;
 
+    struct Bus {
+        lcdc: u8,
+        scx: u8,
+        scy: u8,
+        bgp: u8,
+        obp0: u8,
+        obp1: u8,
+        ly: u8,
+        stat: u8,
+        vram: VRam,
+        bg_palette_ram: PaletteRam,
+        obj_palette_ram: PaletteRam,
+        oam: Oam,
+        cgb_mode: bool,
+    }
+
+    impl Bus {
+        fn new() -> Box<Self> {
+            Box::new(Self {
+                lcdc: 0,
+                scx: 0,
+                scy: 0,
+                bgp: 0,
+                obp0: 0,
+                obp1: 0,
+                ly: 0,
+                stat: 0,
+                vram: unsafe { MaybeUninit::zeroed().assume_init() },
+                bg_palette_ram: unsafe { MaybeUninit::zeroed().assume_init() },
+                obj_palette_ram: unsafe { MaybeUninit::zeroed().assume_init() },
+                oam: unsafe { MaybeUninit::zeroed().assume_init() },
+                cgb_mode: true,
+            })
+        }
+    }
+
+    impl PpuBus for Bus {
+        fn lcdc(&self) -> u8 {
+            self.lcdc
+        }
+
+        fn scx(&self) -> u8 {
+            self.scx
+        }
+
+        fn scy(&self) -> u8 {
+            self.scy
+        }
+
+        fn bgp(&self) -> u8 {
+            self.bgp
+        }
+
+        fn obp0(&self) -> u8 {
+            self.obp0
+        }
+
+        fn obp1(&self) -> u8 {
+            self.obp1
+        }
+
+        fn set_ly(&mut self, ly: u8) {
+            self.ly = ly;
+        }
+
+        fn set_stat(&mut self, stat: u8) {
+            self.stat = stat;
+        }
+
+        fn trigger_vblank_interrupt(&mut self) {}
+
+        fn vram(&self) -> &VRam {
+            &self.vram
+        }
+
+        fn bg_palette_ram(&self) -> &PaletteRam {
+            &self.bg_palette_ram
+        }
+
+        fn obj_palette_ram(&self) -> &PaletteRam {
+            &self.obj_palette_ram
+        }
+
+        fn oam(&self) -> &Oam {
+            &self.oam
+        }
+
+        fn cgb_mode(&self) -> bool {
+            self.cgb_mode
+        }
+    }
+
     struct Context {
         ppu: Ppu,
-        mem: Box<CgbSystem>,
+        bus: Box<Bus>,
         frame_buff: FrameBuffer,
     }
 
     impl Context {
         fn new(vram_init: impl FnOnce(&mut VRam)) -> Self {
-            let mut mem = CgbSystem::new([]);
-            vram_init(mem.vram_mut());
-            let bg_palette_ram = mem.bg_palette_ram_mut();
+            let mut bus = Bus::new();
+            vram_init(&mut bus.vram);
             let palette: Vec<u8> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]
                 .into_iter()
                 .flat_map(u16::to_le_bytes)
                 .collect();
-            bg_palette_ram[0..8].copy_from_slice(&palette);
-            mem[MappedReg::Lcdc] = 0x90;
-            Self {
-                ppu: Ppu::new(&mut mem),
-                mem,
-                frame_buff: unsafe { MaybeUninit::zeroed().assume_init() },
-            }
+            bus.bg_palette_ram[0..8].copy_from_slice(&palette);
+            bus.lcdc = 0x90;
+            let ppu = Ppu::new();
+            ppu.update_control_regs(&mut *bus);
+            Self { ppu, bus, frame_buff: unsafe { MaybeUninit::zeroed().assume_init() } }
         }
 
         fn draw_frame(&mut self) {
             for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
-                self.ppu.execute(&mut self.frame_buff, &mut self.mem);
+                self.ppu.execute(&mut self.frame_buff, &mut *self.bus);
             }
         }
 
@@ -373,7 +472,7 @@ mod tests {
     fn test_scroll_x() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scx in 0..=255 {
-            ctx.mem[MappedReg::Scx] = scx;
+            ctx.bus.scx = scx;
             ctx.draw_frame();
             ctx.assert_frame(|x, y| {
                 let tile_x = x.wrapping_add(scx) / 8;
@@ -391,7 +490,7 @@ mod tests {
     fn test_scroll_y() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scy in 0..=255 {
-            ctx.mem[MappedReg::Scy] = scy;
+            ctx.bus.scy = scy;
             ctx.draw_frame();
             ctx.assert_frame(|x, y| {
                 let tile_x = x / 8;
