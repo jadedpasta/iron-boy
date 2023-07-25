@@ -246,6 +246,7 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) 
         const DMA: u16 = MappedReg::Dma as _;
         const HDMA5: u16 = MappedReg::Hdma5 as _;
         match addr {
+            0x0000..=0x7fff => (), // Ignore writes to cartridge ROM (TODO: MBCs)
             0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
             BCPD if *self.cgb_mode => {
                 let bcps = self.mem[MappedReg::Bcps];
