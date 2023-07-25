@@ -94,25 +94,30 @@ impl Cpu {
     }
 
     pub(super) fn daa(&mut self) {
-        let mut correction = 0;
-        let a = self.regs[Reg8::A];
+        let mut a = self.regs[Reg8::A];
 
         let subtract = self.regs.get_flag(Flag::SUB);
-
-        if self.regs.get_flag(Flag::HALF_CARRY) || !subtract && a & 0xf > 0x09 {
-            correction = 0x06;
-        }
-
-        if self.regs.get_flag(Flag::CARRY) || !subtract && a > 0x99 {
-            self.regs.set_flags(Flag::CARRY, true);
-            correction |= 0x60;
-        }
+        let carry = self.regs.get_flag(Flag::CARRY);
+        let half_carry = self.regs.get_flag(Flag::HALF_CARRY);
 
         if subtract {
-            correction = -(correction as i8) as u8;
+            if carry {
+                a = a.wrapping_sub(0x60);
+            }
+            if half_carry {
+                a = a.wrapping_sub(0x06);
+            }
+        } else {
+            if carry || a > 0x99 {
+                self.regs.set_flags(Flag::CARRY, true);
+                a = a.wrapping_add(0x60);
+            }
+            if half_carry || a & 0x0f > 0x09 {
+                a = a.wrapping_add(0x06);
+            }
         }
+        self.regs[Reg8::A] = a;
 
-        self.regs[Reg8::A] = a.wrapping_add(correction);
         self.regs.set_flags(Flag::ZERO, a == 0);
         self.regs.set_flags(Flag::HALF_CARRY, false);
     }
