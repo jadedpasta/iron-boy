@@ -127,6 +127,7 @@ impl Cpu {
         self.write_var(var, val, bus);
         self.regs.set_flags(Flag::HALF_CARRY, val & 0xf == 0);
         self.regs.set_flags(Flag::ZERO, val == 0);
+        self.regs.set_flags(Flag::SUB, false);
     }
 
     pub(super) fn dec(&mut self, var: Var8, bus: &mut impl CpuBus) {
