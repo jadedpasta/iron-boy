@@ -307,14 +307,17 @@ impl Cpu {
         }
 
         if self.cycles_remaining == 0 && !self.handle_interrupts(bus) {
+            #[cfg(feature = "cpu-debug")]
             let start_pc = self.pc;
             let opcode = self.read_immedate_8(bus);
 
+            #[cfg(feature = "cpu-debug")]
             print!("Executing({:04x}): {opcode:#02x} ", start_pc);
 
             let entry_data;
             let entry = if opcode == instruction_set::PREFIX_OPCODE {
                 let opcode = self.read_immedate_8(bus);
+                #[cfg(feature = "cpu-debug")]
                 print!("{opcode:#02x} ");
                 entry_data = instruction_set::entry_for_prefix_opcode(opcode);
                 &entry_data
@@ -322,6 +325,7 @@ impl Cpu {
                 instruction_set::entry_for_opcode(opcode)
             };
 
+            #[cfg(feature = "cpu-debug")]
             println!("{:?}", entry.instruction);
 
             self.execute_instruction(bus, &entry);
