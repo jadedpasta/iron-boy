@@ -4,6 +4,7 @@ mod interrupt;
 mod joypad;
 mod ppu;
 mod system;
+mod timer;
 
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
@@ -45,6 +46,8 @@ impl Cgb {
             dma.execute(bus);
             let (cpu, bus) = self.system.split_cpu();
             cpu.execute(bus);
+            let (timer, bus) = self.system.split_timer();
+            timer.execute(bus);
             if !lcd_on && self.system.lcd_on() {
                 return;
             }

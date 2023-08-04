@@ -11,6 +11,7 @@ use crate::{
     interrupt::Interrupt,
     joypad::{Button, ButtonState, JoypadState},
     ppu::{Ppu, PpuBus},
+    timer::{Timer, TimerBus},
 };
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
@@ -144,6 +145,7 @@ impl IndexMut<MappedReg> for MemoryData {
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
     cpu: Cpu,
+    pub timer: Timer,
     ppu: Ppu,
     dma: Dma,
     mem: MemoryData,
@@ -157,6 +159,7 @@ impl CgbSystem {
         let mut rom = rom.into();
         let mut system = Box::new(CgbSystem {
             cpu: Cpu::default(),
+            timer: Timer::new(),
             dma: Dma::new(),
             ppu: Ppu::new(),
             // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
@@ -191,6 +194,11 @@ impl CgbSystem {
         return (&mut system.dma, bus);
     }
 
+    pub fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
+        let (bus, system) = SplitOff::split_off_mut(self);
+        return (&mut system.timer, bus);
+    }
+
     pub fn lcd_on(&self) -> bool {
         self.mem[MappedReg::Lcdc] & 0x80 != 0
     }
@@ -204,11 +212,15 @@ impl CgbSystem {
     }
 }
 
-impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) {
+impl CpuBus for partial!(CgbSystem ! cpu, mut mem timer dma boot_rom_mapped cgb_mode) {
     fn read_8(&self, addr: u16) -> u8 {
         const BCPD: u16 = MappedReg::Bcpd as _;
         const OCPD: u16 = MappedReg::Ocpd as _;
         const P1: u16 = MappedReg::P1 as _;
+        const DIV: u16 = MappedReg::Div as _;
+        const TIMA: u16 = MappedReg::Tima as _;
+        const TMA: u16 = MappedReg::Tma as _;
+        const TAC: u16 = MappedReg::Tac as _;
         match addr {
             0x0000..=0x00ff | 0x0200..=0x08ff if *self.boot_rom_mapped => BOOT_ROM[addr as usize],
             0xfea0..=0xfeff => {
@@ -235,6 +247,10 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) 
 
                 p1 & 0xf0 | !bits & 0x0f
             }
+            DIV => self.timer.div(),
+            TIMA => self.timer.tima(),
+            TMA => self.timer.tma(),
+            TAC => self.timer.tac(),
             _ => *self.mem.addr_to_ref(addr, *self.cgb_mode),
         }
     }
@@ -245,6 +261,10 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) 
         const BANK: u16 = MappedReg::Bank as _;
         const DMA: u16 = MappedReg::Dma as _;
         const HDMA5: u16 = MappedReg::Hdma5 as _;
+        const DIV: u16 = MappedReg::Div as _;
+        const TIMA: u16 = MappedReg::Tima as _;
+        const TMA: u16 = MappedReg::Tma as _;
+        const TAC: u16 = MappedReg::Tac as _;
         match addr {
             0x0000..=0x7fff => (), // Ignore writes to cartridge ROM (TODO: MBCs)
             0xfea0..=0xfeff => (), // Ignore writes to the prohibited area
@@ -273,6 +293,10 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem dma boot_rom_mapped cgb_mode) 
                 *self.boot_rom_mapped = false;
                 *self.cgb_mode = self.mem[MappedReg::Key0] != NON_CGB_KEY0_VAL;
             }
+            DIV => self.timer.reset_div(),
+            TIMA => self.timer.set_tima(val),
+            TMA => self.timer.set_tma(val),
+            TAC => self.timer.set_tac(val),
             _ => *self.mem.addr_to_ref_mut(addr, *self.cgb_mode) = val,
         }
     }
@@ -379,5 +403,11 @@ impl DmaBus for partial!(CgbSystem ! dma, mut mem) {
 
     fn read_8(&self, addr: u16) -> u8 {
         *self.mem.addr_to_ref(addr, *self.cgb_mode)
+    }
+}
+
+impl TimerBus for partial!(CgbSystem ! timer, mut mem) {
+    fn request_timer_interrupt(&mut self) {
+        Interrupt::Timer.request(&mut self.mem[MappedReg::If]);
     }
 }
