@@ -1,4 +1,4 @@
-use crate::memory::{OamBytes, VRamBytes};
+use crate::memory::OamBytes;
 
 pub enum DmaType {
     Oam,
