@@ -324,6 +324,10 @@ mod tests {
         fn pop_interrupt(&mut self) -> Option<u8> {
             unimplemented!();
         }
+
+        fn interrupt_pending(&mut self) -> bool {
+            unimplemented!();
+        }
     }
 
     #[test]

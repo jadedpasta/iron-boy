@@ -24,14 +24,25 @@ impl Cpu {
         }
     }
 
+    pub(super) fn halt(&mut self) {
+        // TODO: Halt bug
+        self.halted = true;
+    }
+
     pub(super) fn handle_interrupts(&mut self, bus: &mut impl CpuBus) -> bool {
         if !self.interrupts_enabled {
+            if bus.interrupt_pending() {
+                self.halted = false;
+            }
             return false;
         }
 
         let Some(bit) = bus.pop_interrupt() else { return false; };
         // Disable interrupts inside the interrupt handler by default.
         self.di();
+
+        // Unhalt the CPU if it's halted to handle the interrupt
+        self.halted = false;
 
         // Bit 0: VBlank   Interrupt Request (INT $40)
         // Bit 1: LCD STAT Interrupt Request (INT $48)

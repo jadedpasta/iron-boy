@@ -114,4 +114,8 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
     fn pop_interrupt(&mut self) -> Option<u8> {
         self.interrupt.pop()
     }
+
+    fn interrupt_pending(&mut self) -> bool {
+        self.interrupt.pending()
+    }
 }

@@ -179,6 +179,7 @@ pub trait CpuBus {
     }
 
     fn cpu_dma_paused(&self) -> bool;
+    fn interrupt_pending(&mut self) -> bool;
     fn pop_interrupt(&mut self) -> Option<u8>;
 }
 
@@ -188,6 +189,7 @@ pub struct Cpu {
     cycles_remaining: usize,
     pc: u16,
     interrupts_enabled: bool,
+    halted: bool,
     enable_interrupts_timer: usize,
 }
 
@@ -294,7 +296,7 @@ impl Cpu {
             Reti => self.reti(bus),
             Di => self.di(),
             Ei => self.ei(),
-            // Halt => (),
+            Halt => self.halt(),
             Stop => self.stop(bus),
             Illegal => panic!("Tried to execute illegal instruction"),
             inst => unimplemented!("{:?}", inst),
@@ -307,6 +309,10 @@ impl Cpu {
         }
 
         if self.cycles_remaining == 0 && !self.handle_interrupts(bus) {
+            if self.halted {
+                return;
+            }
+
             #[cfg(feature = "cpu-debug")]
             let start_pc = self.pc;
             let opcode = self.read_immedate_8(bus);
