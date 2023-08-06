@@ -4,6 +4,7 @@ mod interrupt;
 mod joypad;
 mod memory;
 mod ppu;
+mod reg;
 mod system;
 mod timer;
 
