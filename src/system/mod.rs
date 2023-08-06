@@ -20,7 +20,7 @@ const BOOT_ROM: &'static [u8] = include_bytes!("../../sameboy_boot.bin");
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
     cpu: Cpu,
-    pub timer: Timer,
+    timer: Timer,
     ppu: Ppu,
     dma: Dma,
     mem: MemoryData,
