@@ -2,6 +2,7 @@ mod cpu;
 mod dma;
 mod ppu;
 mod timer;
+mod joypad;
 
 use partial_borrow::{prelude::*, SplitOff};
 
@@ -72,6 +73,7 @@ impl CgbSystem {
     }
 
     pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
-        self.joypad.handle(button, state);
+        let (bus, system) = SplitOff::split_off_mut(self);
+        system.joypad.handle(button, state, bus);
     }
 }

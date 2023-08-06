@@ -42,6 +42,10 @@ impl ButtonState {
     }
 }
 
+pub trait JoypadBus {
+    fn request_joypad_interrupt(&mut self);
+}
+
 pub struct Joypad {
     state: u8,
     p1: u8,
@@ -52,10 +56,13 @@ impl Joypad {
         Self { state: 0, p1: 0 }
     }
 
-    pub fn handle(&mut self, button: Button, state: ButtonState) {
+    pub fn handle(&mut self, button: Button, state: ButtonState, bus: &mut impl JoypadBus) {
         let button = 1 << button as u8;
         match state {
-            ButtonState::Pressed => self.state |= button,
+            ButtonState::Pressed => {
+                self.state |= button;
+                bus.request_joypad_interrupt();
+            }
             ButtonState::Released => self.state &= !button,
         }
     }
@@ -81,6 +88,7 @@ impl Joypad {
     }
 
     pub fn set_p1(&mut self, p1: u8) {
-        self.p1 = p1;
+        self.p1 &= 0x0f;
+        self.p1 |= p1 & 0xf0;
     }
 }
