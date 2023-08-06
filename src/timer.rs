@@ -40,7 +40,6 @@ impl Timer {
             self.tima += 1;
             if self.tima.0 == 0 {
                 // overflow
-                eprintln!("{:b}", old_counter);
                 self.tima.0 = self.tma;
                 bus.request_timer_interrupt();
             }
