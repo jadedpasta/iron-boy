@@ -1,4 +1,4 @@
-use crate::system::{OamBytes, VRamBytes};
+use crate::memory::{OamBytes, VRamBytes};
 
 pub enum DmaType {
     Oam,
@@ -13,8 +13,7 @@ struct DmaState {
 }
 
 pub trait DmaBus {
-    fn vbk(&self) -> usize;
-    fn vram_mut(&mut self) -> &mut VRamBytes;
+    fn write_vram(&mut self, addr: u16, val: u8);
     fn oam_mut(&mut self) -> &mut OamBytes;
     fn read_8(&self, addr: u16) -> u8;
 }
@@ -86,13 +85,12 @@ impl Dma {
                 // Ensure the CPU is stalled during the transfer
                 self.cpu_paused = true;
                 // Copy 2 bytes per M-cycle
-                let vbk = bus.vbk();
                 let src_addr = self.general_src_addr().wrapping_add(state.count);
-                let dst_addr = self.general_dst_addr().wrapping_add(state.count) & 0x1fff;
-                bus.vram_mut()[vbk][dst_addr as usize] = bus.read_8(src_addr);
+                let dst_addr = self.general_dst_addr().wrapping_add(state.count);
+                bus.write_vram(dst_addr, bus.read_8(src_addr));
                 let src_addr = src_addr.wrapping_add(1);
-                let dst_addr = (dst_addr + 1) & 0x1fff;
-                bus.vram_mut()[vbk][dst_addr as usize] = bus.read_8(src_addr);
+                let dst_addr = dst_addr.wrapping_add(1);
+                bus.write_vram(dst_addr, bus.read_8(src_addr));
             }
             DmaType::Oam => {
                 let src_addr = state.oam_src.wrapping_add(state.count);

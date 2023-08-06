@@ -1,5 +1,3 @@
-use std::mem::{self, MaybeUninit};
-
 use partial_borrow::{prelude::*, SplitOff};
 
 use crate::{
@@ -7,6 +5,7 @@ use crate::{
     dma::{Dma, DmaBus},
     interrupt::{Interrupt, InterruptState},
     joypad::{Button, ButtonState, Joypad},
+    memory::{MemoryData, OamBytes, Palettes, VRamBytes},
     ppu::{Ppu, PpuBus},
     timer::{Timer, TimerBus},
 };
@@ -89,98 +88,6 @@ mod reg {
     }
 }
 
-pub type VRamBytes = [[u8; 0x2000]; 2];
-pub type PaletteRamBytes = [u8; 64];
-pub type OamBytes = [u8; 0xa0];
-
-struct WorkRam {
-    low: [u8; 0x1000],
-    high: [[u8; 0x1000]; 7],
-    pub svbk: u8,
-}
-
-impl WorkRam {
-    fn bank(&self, cgb_mode: bool) -> usize {
-        if !cgb_mode || self.svbk == 0 {
-            0
-        } else {
-            (self.svbk - 1) as usize & 0x3
-        }
-    }
-
-    pub fn read_low(&self, addr: u16) -> u8 {
-        self.low[addr as usize & 0xfff]
-    }
-
-    pub fn read_high(&self, addr: u16, cgb_mode: bool) -> u8 {
-        self.high[self.bank(cgb_mode)][addr as usize & 0xfff]
-    }
-
-    pub fn write_low(&mut self, addr: u16, val: u8) {
-        self.low[addr as usize & 0xfff] = val;
-    }
-
-    pub fn write_high(&mut self, addr: u16, val: u8, cgb_mode: bool) {
-        self.high[self.bank(cgb_mode)][addr as usize & 0xfff] = val;
-    }
-}
-
-struct VideoRam {
-    vram: VRamBytes,
-    pub vbk: u8,
-}
-
-impl VideoRam {
-    pub fn bank(&self, cgb_mode: bool) -> usize {
-        if cgb_mode {
-            self.vbk as usize & 0x1
-        } else {
-            0
-        }
-    }
-
-    pub fn read(&self, addr: u16, cgb_mode: bool) -> u8 {
-        self.vram[self.bank(cgb_mode)][addr as usize & 0x1fff]
-    }
-
-    pub fn write(&mut self, addr: u16, val: u8, cgb_mode: bool) {
-        self.vram[self.bank(cgb_mode)][addr as usize & 0x1fff] = val;
-    }
-}
-
-struct PaletteRam {
-    ram: PaletteRamBytes,
-    pub select: u8,
-}
-
-impl PaletteRam {
-    fn index(&self) -> usize {
-        (self.select & 0x3f) as usize
-    }
-
-    pub fn read_data(&self) -> u8 {
-        self.ram[self.index()]
-    }
-
-    pub fn write_data(&mut self, val: u8) {
-        self.ram[self.index()] = val;
-        self.select = (self.select & 0xc0) | self.select.wrapping_add(self.select >> 7) & 0x3f;
-    }
-}
-
-struct MemoryData {
-    cartrige_rom: [u8; 0x8000], // TODO: MBCs
-    vram: VideoRam,
-    cartrige_ram: [u8; 0x2000], // TODO: MBCs
-    wram: WorkRam,
-    // echo_ram: mirror of 0xc000~0xddff
-    oam: OamBytes,
-    // prohibited_area: 0xfea0~0xfeff
-    hram: [u8; 0x7f],
-    bg_palette: PaletteRam,
-    obj_palette: PaletteRam,
-}
-
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
     cpu: Cpu,
@@ -197,24 +104,18 @@ pub struct CgbSystem {
 
 impl CgbSystem {
     pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
-        let mut rom = rom.into();
-        let mut system = Box::new(CgbSystem {
+        Box::new(CgbSystem {
             cpu: Cpu::default(),
             timer: Timer::new(),
             dma: Dma::new(),
             ppu: Ppu::new(),
-            // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
-            mem: unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() },
+            mem: MemoryData::new(rom),
             joypad: Joypad::new(),
             interrupt: InterruptState::new(),
             boot_rom_mapped: true,
             cgb_mode: true,
             key0: 0,
-        });
-
-        rom.resize(mem::size_of_val(&system.mem.cartrige_rom), 0);
-        system.mem.cartrige_rom.copy_from_slice(&rom[..]);
-        system
+        })
     }
 
     pub fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
@@ -362,15 +263,15 @@ impl PpuBus for partial!(CgbSystem ! ppu, mut mem interrupt) {
     }
 
     fn vram(&self) -> &VRamBytes {
-        &self.mem.vram.vram
+        &self.mem.vram.bytes()
     }
 
-    fn bg_palette_ram(&self) -> &PaletteRamBytes {
-        &self.mem.bg_palette.ram
+    fn bg_palette_ram(&self) -> &Palettes {
+        &self.mem.bg_palette.palettes()
     }
 
-    fn obj_palette_ram(&self) -> &PaletteRamBytes {
-        &self.mem.obj_palette.ram
+    fn obj_palette_ram(&self) -> &Palettes {
+        &self.mem.obj_palette.palettes()
     }
 
     fn oam(&self) -> &OamBytes {
@@ -383,12 +284,8 @@ impl PpuBus for partial!(CgbSystem ! ppu, mut mem interrupt) {
 }
 
 impl DmaBus for partial!(CgbSystem ! dma, mut mem) {
-    fn vbk(&self) -> usize {
-        self.mem.vram.bank(*self.cgb_mode)
-    }
-
-    fn vram_mut(&mut self) -> &mut VRamBytes {
-        &mut self.mem.vram.vram
+    fn write_vram(&mut self, addr: u16, val: u8) {
+        self.mem.vram.write(addr, val, *self.cgb_mode);
     }
 
     fn oam_mut(&mut self) -> &mut OamBytes {

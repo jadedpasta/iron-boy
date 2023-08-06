@@ -2,6 +2,7 @@ mod cpu;
 mod dma;
 mod interrupt;
 mod joypad;
+mod memory;
 mod ppu;
 mod system;
 mod timer;

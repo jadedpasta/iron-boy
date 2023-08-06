@@ -1,7 +1,7 @@
 use std::mem;
 
 use crate::{
-    system::{OamBytes, PaletteRamBytes, VRamBytes},
+    memory::{OamBytes, Palettes, VRamBytes},
     Cgb, FrameBuffer,
 };
 
@@ -30,8 +30,8 @@ pub trait PpuBus {
     fn trigger_vblank_interrupt(&mut self);
 
     fn vram(&self) -> &VRamBytes;
-    fn bg_palette_ram(&self) -> &PaletteRamBytes;
-    fn obj_palette_ram(&self) -> &PaletteRamBytes;
+    fn bg_palette_ram(&self) -> &Palettes;
+    fn obj_palette_ram(&self) -> &Palettes;
     fn oam(&self) -> &OamBytes;
     fn cgb_mode(&self) -> bool;
 }
@@ -49,15 +49,8 @@ pub struct Ppu {
     stat: u8,
 }
 
-type Color = [u8; 2];
-type Palette = [Color; 4];
-type Palettes = [Palette; 8];
 type Obj = [u8; 4];
 type Objs = [Obj; 40];
-
-fn ram_to_palettes(ram: &PaletteRamBytes) -> &Palettes {
-    unsafe { mem::transmute(ram) }
-}
 
 fn ram_to_objs(ram: &OamBytes) -> &Objs {
     unsafe { mem::transmute(ram) }
@@ -181,8 +174,8 @@ impl Ppu {
     }
 
     fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, bus: &impl PpuBus) -> u16 {
-        let bg_palettes = ram_to_palettes(&bus.bg_palette_ram());
-        let obj_palettes = ram_to_palettes(&bus.obj_palette_ram());
+        let bg_palettes = bus.bg_palette_ram();
+        let obj_palettes = bus.obj_palette_ram();
 
         let bg_enable_pri = self.lcdc & 0x1 != 0;
         if let Some(obj_pixel) = obj_pixel {
@@ -323,14 +316,14 @@ impl Ppu {
 mod tests {
     use std::{iter::repeat, mem::MaybeUninit};
 
-    use crate::system::VRamBytes;
+    use crate::memory::VRamBytes;
 
     use super::*;
 
     struct Bus {
         vram: VRamBytes,
-        bg_palette_ram: PaletteRamBytes,
-        obj_palette_ram: PaletteRamBytes,
+        bg_palette_ram: Palettes,
+        obj_palette_ram: Palettes,
         oam: OamBytes,
         cgb_mode: bool,
     }
@@ -354,11 +347,11 @@ mod tests {
             &self.vram
         }
 
-        fn bg_palette_ram(&self) -> &PaletteRamBytes {
+        fn bg_palette_ram(&self) -> &Palettes {
             &self.bg_palette_ram
         }
 
-        fn obj_palette_ram(&self) -> &PaletteRamBytes {
+        fn obj_palette_ram(&self) -> &Palettes {
             &self.obj_palette_ram
         }
 
@@ -381,11 +374,9 @@ mod tests {
         fn new(vram_init: impl FnOnce(&mut VRamBytes)) -> Self {
             let mut bus = Bus::new();
             vram_init(&mut bus.vram);
-            let palette: Vec<u8> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]
-                .into_iter()
-                .flat_map(u16::to_le_bytes)
-                .collect();
-            bus.bg_palette_ram[0..8].copy_from_slice(&palette);
+            let palette: Vec<[u8; 2]> =
+                [0xffff, 0x1f << 10, 0x1f << 5, 0x1f].into_iter().map(u16::to_le_bytes).collect();
+            bus.bg_palette_ram[0].copy_from_slice(&palette);
             let mut ppu = Ppu::new();
             ppu.lcdc = 0x90;
             Self { ppu, bus, frame_buff: unsafe { MaybeUninit::zeroed().assume_init() } }
