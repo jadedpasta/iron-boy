@@ -42,26 +42,45 @@ impl ButtonState {
     }
 }
 
-pub struct JoypadState(u8);
+pub struct Joypad {
+    state: u8,
+    p1: u8,
+}
 
-impl JoypadState {
+impl Joypad {
     pub fn new() -> Self {
-        Self(0)
+        Self { state: 0, p1: 0 }
     }
 
     pub fn handle(&mut self, button: Button, state: ButtonState) {
         let button = 1 << button as u8;
         match state {
-            ButtonState::Pressed => self.0 |= button,
-            ButtonState::Released => self.0 &= !button,
+            ButtonState::Pressed => self.state |= button,
+            ButtonState::Released => self.state &= !button,
         }
     }
 
-    pub fn direction_bits(&self) -> u8 {
-        self.0 & 0x0f
+    fn direction_bits(&self) -> u8 {
+        self.state & 0x0f
     }
 
-    pub fn action_bits(&self) -> u8 {
-        (self.0 >> 4) & 0x0f
+    fn action_bits(&self) -> u8 {
+        (self.state >> 4) & 0x0f
+    }
+
+    pub fn p1(&self) -> u8 {
+        let mut bits = 0;
+        if (self.p1 >> 4) & 0x1 == 0 {
+            bits |= self.direction_bits();
+        }
+        if (self.p1 >> 5) & 0x1 == 0 {
+            bits |= self.action_bits();
+        }
+
+        self.p1 & 0xf0 | !bits & 0x0f
+    }
+
+    pub fn set_p1(&mut self, p1: u8) {
+        self.p1 = p1;
     }
 }

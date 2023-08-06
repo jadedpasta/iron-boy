@@ -1,4 +1,4 @@
-use crate::system::{Oam, VRam};
+use crate::system::{OamBytes, VRamBytes};
 
 pub enum DmaType {
     Oam,
@@ -13,36 +13,69 @@ struct DmaState {
 }
 
 pub trait DmaBus {
-    fn general_src_addr(&self) -> u16;
-    fn general_dst_addr(&self) -> u16;
     fn vbk(&self) -> usize;
-    fn vram_mut(&mut self) -> &mut VRam;
-    fn oam_mut(&mut self) -> &mut Oam;
+    fn vram_mut(&mut self) -> &mut VRamBytes;
+    fn oam_mut(&mut self) -> &mut OamBytes;
     fn read_8(&self, addr: u16) -> u8;
 }
 
 pub struct Dma {
     state: Option<DmaState>,
     cpu_paused: bool,
+    dma: u8,
+    pub hdma1: u8,
+    pub hdma2: u8,
+    pub hdma3: u8,
+    pub hdma4: u8,
 }
 
 impl Dma {
     pub fn new() -> Self {
-        Self { state: None, cpu_paused: false }
+        Self { state: None, cpu_paused: false, dma: 0, hdma1: 0, hdma2: 0, hdma3: 0, hdma4: 0 }
     }
 
     pub fn cpu_paused(&self) -> bool {
         self.cpu_paused
     }
 
-    pub fn start_general(&mut self, len: u16) {
+    fn start_general(&mut self, len: u16) {
         // TODO: Do some kind of cancel of an ongoing OAM DMA for simplicity
         self.state = Some(DmaState { ty: DmaType::General, len, count: 0, oam_src: 0 });
     }
 
-    pub fn start_oam(&mut self, oam_src: u16) {
+    pub fn hdma5(&self) -> u8 {
+        todo!("HDMA5 reads (see pandocs)")
+    }
+
+    pub fn set_hdma5(&mut self, hdma5: u8) {
+        let len = ((hdma5 & 0x7f) as u16).wrapping_add(1) * 16;
+        if hdma5 >> 7 != 0 {
+            todo!("HBlank DMA");
+        } else {
+            self.start_general(len);
+        }
+    }
+
+    fn start_oam(&mut self, oam_src: u16) {
         // TODO: Do some kind of cancel of an ongoing HDMA for simplicity
         self.state = Some(DmaState { ty: DmaType::Oam, len: 0xa0, count: 0, oam_src });
+    }
+
+    pub fn dma(&self) -> u8 {
+        self.dma
+    }
+
+    pub fn set_dma(&mut self, dma: u8) {
+        self.dma = dma;
+        self.start_oam((dma as u16) << 8);
+    }
+
+    fn general_src_addr(&self) -> u16 {
+        u16::from_be_bytes([self.hdma1, self.hdma2]) & 0xfff0
+    }
+
+    fn general_dst_addr(&self) -> u16 {
+        u16::from_be_bytes([self.hdma3, self.hdma4]) & 0x1ff0
     }
 
     pub fn execute(&mut self, bus: &mut impl DmaBus) {
@@ -54,8 +87,8 @@ impl Dma {
                 self.cpu_paused = true;
                 // Copy 2 bytes per M-cycle
                 let vbk = bus.vbk();
-                let src_addr = bus.general_src_addr().wrapping_add(state.count);
-                let dst_addr = bus.general_dst_addr().wrapping_add(state.count) & 0x1fff;
+                let src_addr = self.general_src_addr().wrapping_add(state.count);
+                let dst_addr = self.general_dst_addr().wrapping_add(state.count) & 0x1fff;
                 bus.vram_mut()[vbk][dst_addr as usize] = bus.read_8(src_addr);
                 let src_addr = src_addr.wrapping_add(1);
                 let dst_addr = (dst_addr + 1) & 0x1fff;

@@ -1,11 +1,12 @@
 use std::mem;
 
 use crate::{
-    system::{Oam, PaletteRam, VRam},
+    system::{OamBytes, PaletteRamBytes, VRamBytes},
     Cgb, FrameBuffer,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+#[repr(u8)]
 enum ModeState {
     HBlank = 0,
     VBlank,
@@ -26,29 +27,26 @@ impl ModeState {
 }
 
 pub trait PpuBus {
-    fn lcdc(&self) -> u8;
-    fn scx(&self) -> u8;
-    fn scy(&self) -> u8;
-    fn bgp(&self) -> u8;
-    fn obp0(&self) -> u8;
-    fn obp1(&self) -> u8;
-
-    fn set_ly(&mut self, ly: u8);
-    fn set_stat(&mut self, stat: u8);
     fn trigger_vblank_interrupt(&mut self);
 
-    fn vram(&self) -> &VRam;
-    fn bg_palette_ram(&self) -> &PaletteRam;
-    fn obj_palette_ram(&self) -> &PaletteRam;
-    fn oam(&self) -> &Oam;
+    fn vram(&self) -> &VRamBytes;
+    fn bg_palette_ram(&self) -> &PaletteRamBytes;
+    fn obj_palette_ram(&self) -> &PaletteRamBytes;
+    fn oam(&self) -> &OamBytes;
     fn cgb_mode(&self) -> bool;
 }
 
 #[derive(Debug)]
 pub struct Ppu {
-    mode_state: ModeState,
-    ly: u8,
     mode_cycles_remaining: usize,
+    pub bgp: u8,
+    pub lcdc: u8,
+    pub ly: u8,
+    pub obp0: u8,
+    pub obp1: u8,
+    pub scx: u8,
+    pub scy: u8,
+    stat: u8,
 }
 
 type Color = [u8; 2];
@@ -57,11 +55,11 @@ type Palettes = [Palette; 8];
 type Obj = [u8; 4];
 type Objs = [Obj; 40];
 
-fn ram_to_palettes(ram: &PaletteRam) -> &Palettes {
+fn ram_to_palettes(ram: &PaletteRamBytes) -> &Palettes {
     unsafe { mem::transmute(ram) }
 }
 
-fn ram_to_objs(ram: &Oam) -> &Objs {
+fn ram_to_objs(ram: &OamBytes) -> &Objs {
     unsafe { mem::transmute(ram) }
 }
 
@@ -80,17 +78,25 @@ struct BgPixel {
 impl Ppu {
     pub fn new() -> Self {
         let mode_state = ModeState::default();
-        Self { mode_cycles_remaining: mode_state.cycles(), mode_state, ly: 0 }
+        Self {
+            mode_cycles_remaining: mode_state.cycles(),
+            bgp: 0,
+            lcdc: 0,
+            ly: 0,
+            obp0: 0,
+            obp1: 0,
+            scx: 0,
+            scy: 0,
+            stat: mode_state as u8,
+        }
     }
 
     fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, bus: &impl PpuBus) -> BgPixel {
-        let lcdc = bus.lcdc();
-        let scx = bus.scx();
         let vram = bus.vram();
 
-        let pixel_x = lx.wrapping_add(scx);
+        let pixel_x = lx.wrapping_add(self.scx);
         // Compute the tilemap address
-        let map_area_bit = ((lcdc >> 3) & 0x1) as usize;
+        let map_area_bit = ((self.lcdc >> 3) & 0x1) as usize;
         let tile_x = pixel_x / 8;
         let vram_addr = 0x1800 | (map_area_bit << 10) | ((tile_y as usize) << 5) | tile_x as usize;
         // Grab the tile ID and attributes from the tile map
@@ -99,7 +105,7 @@ impl Ppu {
 
         // Grab the pixel data corresponding to that tile ID
         let y_offset = pixel_y & 0x7;
-        let addr_mode_bit = !((lcdc >> 4) | (tile_id >> 7)) & 0x1;
+        let addr_mode_bit = !((self.lcdc >> 4) | (tile_id >> 7)) & 0x1;
         let vram_addr = ((addr_mode_bit as usize) << 12)
             | ((tile_id as usize) << 4)
             | ((y_offset as usize) << 1);
@@ -126,9 +132,7 @@ impl Ppu {
         objs: &Objs,
         bus: &impl PpuBus,
     ) -> Option<ObjPixel> {
-        let lcdc = bus.lcdc();
-
-        if lcdc & 0x2 == 0 {
+        if self.lcdc & 0x2 == 0 {
             // OBJ is disabled
             return None;
         }
@@ -144,7 +148,7 @@ impl Ppu {
 
         let y_flip = obj[3] & 0x20 != 0;
         let x_flip = obj[3] & 0x10 != 0;
-        let tile_id = if lcdc & 0x4 == 0 {
+        let tile_id = if self.lcdc & 0x4 == 0 {
             // 8x8 mode
             obj[2]
         } else {
@@ -177,11 +181,10 @@ impl Ppu {
     }
 
     fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, bus: &impl PpuBus) -> u16 {
-        let lcdc = bus.lcdc();
         let bg_palettes = ram_to_palettes(&bus.bg_palette_ram());
         let obj_palettes = ram_to_palettes(&bus.obj_palette_ram());
 
-        let bg_enable_pri = lcdc & 0x1 != 0;
+        let bg_enable_pri = self.lcdc & 0x1 != 0;
         if let Some(obj_pixel) = obj_pixel {
             let obj_priority = obj_pixel.color != 0
                 && (bg_pixel.color == 0
@@ -194,7 +197,7 @@ impl Ppu {
                 let (color, palette) = if bus.cgb_mode() {
                     (obj_pixel.color, obj_pixel.palette)
                 } else {
-                    let obp = if obj_pixel.palette == 0 { bus.obp0() } else { bus.obp1() };
+                    let obp = if obj_pixel.palette == 0 { self.obp0 } else { self.obp1 };
                     ((obp >> (obj_pixel.color * 2)) & 0x3, obj_pixel.palette)
                 };
 
@@ -208,23 +211,17 @@ impl Ppu {
             return 0x7fff;
         }
 
-        let color = if bus.cgb_mode() {
-            bg_pixel.color
-        } else {
-            let bgp = bus.bgp();
-            (bgp >> (bg_pixel.color * 2)) & 0x3
-        };
+        let color =
+            if bus.cgb_mode() { bg_pixel.color } else { (self.bgp >> (bg_pixel.color * 2)) & 0x3 };
 
         let palette = bg_palettes[bg_pixel.palette as usize];
         u16::from_le_bytes(palette[color as usize])
     }
 
     fn draw_scanline(&self, frame_buff: &mut FrameBuffer, bus: &impl PpuBus) {
-        let lcdc = bus.lcdc();
-
         // OAM Search
         let objs = ram_to_objs(bus.oam());
-        let height = (((lcdc >> 2) & 0x1) + 1) * 8; // 8 or 16
+        let height = (((self.lcdc >> 2) & 0x1) + 1) * 8; // 8 or 16
         let obj_target_y = self.ly + 16;
         let mut selected_objs: Vec<usize> = objs
             .iter()
@@ -240,8 +237,7 @@ impl Ppu {
             selected_objs.sort_by_key(|i| objs[*i][1]);
         }
 
-        let scy = bus.scy();
-        let pixel_y = self.ly.wrapping_add(scy);
+        let pixel_y = self.ly.wrapping_add(self.scy);
         let tile_y = pixel_y / 8;
         for lx in 0..Cgb::SCREEN_WIDTH as u8 {
             let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, objs, bus);
@@ -260,36 +256,43 @@ impl Ppu {
 
     fn switch_mode(&mut self, mode: ModeState) {
         self.mode_cycles_remaining = mode.cycles();
-        self.mode_state = mode;
+        self.stat &= 0xfc;
+        self.stat |= mode as u8;
     }
 
-    pub fn update_control_regs(&self, bus: &mut impl PpuBus) {
-        bus.set_ly(self.ly);
-        bus.set_stat(self.mode_state as u8);
+    fn mode_state(&self) -> ModeState {
+        unsafe { mem::transmute(self.stat & 0x3) }
+    }
+
+    pub fn stat(&self) -> u8 {
+        self.stat
+    }
+
+    pub fn set_stat(&mut self, stat: u8) {
+        self.stat &= 0x3;
+        self.stat |= stat & 0xfc;
     }
 
     pub fn execute(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
-        let lcdc = bus.lcdc();
-        let lcd_enabled = lcdc & 0x80 != 0;
+        let lcd_enabled = self.lcdc & 0x80 != 0;
 
         if !lcd_enabled {
             // TODO: Ideally we would do this only on the first dot after the LCD is disabled.
             self.ly = 0;
-            self.mode_state = ModeState::OamSearch;
-            self.mode_cycles_remaining = self.mode_state.cycles();
-            self.update_control_regs(bus);
+            self.switch_mode(ModeState::OamSearch);
             return;
         }
 
-        if self.mode_cycles_remaining > 0 {
+        if self.mode_cycles_remaining > 1 {
             // There are still cycles left for the current mode. Wait to do anything until the last
             // cycle.
             self.mode_cycles_remaining -= 1;
             return;
         }
+        self.mode_cycles_remaining = 0;
 
-        match self.mode_state {
-            ModeState::OamSearch => self.mode_state = ModeState::Transfer,
+        match self.mode_state() {
+            ModeState::OamSearch => self.switch_mode(ModeState::Transfer),
             ModeState::Transfer => {
                 self.draw_scanline(frame_buff, bus);
                 self.switch_mode(ModeState::HBlank);
@@ -313,8 +316,6 @@ impl Ppu {
                 }
             }
         }
-
-        self.update_control_regs(bus);
     }
 }
 
@@ -322,37 +323,21 @@ impl Ppu {
 mod tests {
     use std::{iter::repeat, mem::MaybeUninit};
 
-    use crate::system::VRam;
+    use crate::system::VRamBytes;
 
     use super::*;
 
     struct Bus {
-        lcdc: u8,
-        scx: u8,
-        scy: u8,
-        bgp: u8,
-        obp0: u8,
-        obp1: u8,
-        ly: u8,
-        stat: u8,
-        vram: VRam,
-        bg_palette_ram: PaletteRam,
-        obj_palette_ram: PaletteRam,
-        oam: Oam,
+        vram: VRamBytes,
+        bg_palette_ram: PaletteRamBytes,
+        obj_palette_ram: PaletteRamBytes,
+        oam: OamBytes,
         cgb_mode: bool,
     }
 
     impl Bus {
         fn new() -> Box<Self> {
             Box::new(Self {
-                lcdc: 0,
-                scx: 0,
-                scy: 0,
-                bgp: 0,
-                obp0: 0,
-                obp1: 0,
-                ly: 0,
-                stat: 0,
                 vram: unsafe { MaybeUninit::zeroed().assume_init() },
                 bg_palette_ram: unsafe { MaybeUninit::zeroed().assume_init() },
                 obj_palette_ram: unsafe { MaybeUninit::zeroed().assume_init() },
@@ -363,53 +348,21 @@ mod tests {
     }
 
     impl PpuBus for Bus {
-        fn lcdc(&self) -> u8 {
-            self.lcdc
-        }
-
-        fn scx(&self) -> u8 {
-            self.scx
-        }
-
-        fn scy(&self) -> u8 {
-            self.scy
-        }
-
-        fn bgp(&self) -> u8 {
-            self.bgp
-        }
-
-        fn obp0(&self) -> u8 {
-            self.obp0
-        }
-
-        fn obp1(&self) -> u8 {
-            self.obp1
-        }
-
-        fn set_ly(&mut self, ly: u8) {
-            self.ly = ly;
-        }
-
-        fn set_stat(&mut self, stat: u8) {
-            self.stat = stat;
-        }
-
         fn trigger_vblank_interrupt(&mut self) {}
 
-        fn vram(&self) -> &VRam {
+        fn vram(&self) -> &VRamBytes {
             &self.vram
         }
 
-        fn bg_palette_ram(&self) -> &PaletteRam {
+        fn bg_palette_ram(&self) -> &PaletteRamBytes {
             &self.bg_palette_ram
         }
 
-        fn obj_palette_ram(&self) -> &PaletteRam {
+        fn obj_palette_ram(&self) -> &PaletteRamBytes {
             &self.obj_palette_ram
         }
 
-        fn oam(&self) -> &Oam {
+        fn oam(&self) -> &OamBytes {
             &self.oam
         }
 
@@ -425,7 +378,7 @@ mod tests {
     }
 
     impl Context {
-        fn new(vram_init: impl FnOnce(&mut VRam)) -> Self {
+        fn new(vram_init: impl FnOnce(&mut VRamBytes)) -> Self {
             let mut bus = Bus::new();
             vram_init(&mut bus.vram);
             let palette: Vec<u8> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]
@@ -433,13 +386,14 @@ mod tests {
                 .flat_map(u16::to_le_bytes)
                 .collect();
             bus.bg_palette_ram[0..8].copy_from_slice(&palette);
-            bus.lcdc = 0x90;
-            let ppu = Ppu::new();
-            ppu.update_control_regs(&mut *bus);
+            let mut ppu = Ppu::new();
+            ppu.lcdc = 0x90;
             Self { ppu, bus, frame_buff: unsafe { MaybeUninit::zeroed().assume_init() } }
         }
 
         fn draw_frame(&mut self) {
+            let mode = self.ppu.mode_state();
+            assert!(mode as u8 == ModeState::OamSearch as u8, "Started frame in {mode:?}");
             for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
                 self.ppu.execute(&mut self.frame_buff, &mut *self.bus);
             }
@@ -458,7 +412,7 @@ mod tests {
         }
     }
 
-    fn checkerboard_vram_init(vram: &mut VRam) {
+    fn checkerboard_vram_init(vram: &mut VRamBytes) {
         vram[0][0..16].copy_from_slice(&[0xff; 16]);
         vram[0][16..32].copy_from_slice(&[0x00; 16]);
         for (y, x) in (0..32).flat_map(|y| repeat(y).zip(0..32)) {
@@ -472,7 +426,7 @@ mod tests {
     fn test_scroll_x() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scx in 0..=255 {
-            ctx.bus.scx = scx;
+            ctx.ppu.scx = scx;
             ctx.draw_frame();
             ctx.assert_frame(|x, y| {
                 let tile_x = x.wrapping_add(scx) / 8;
@@ -490,7 +444,7 @@ mod tests {
     fn test_scroll_y() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scy in 0..=255 {
-            ctx.bus.scy = scy;
+            ctx.ppu.scy = scy;
             ctx.draw_frame();
             ctx.assert_frame(|x, y| {
                 let tile_x = x / 8;
