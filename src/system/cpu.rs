@@ -1,79 +1,12 @@
-use partial_borrow::{prelude::*, SplitOff};
+use partial_borrow::prelude::*;
 
-use crate::{
-    cpu::{Cpu, CpuBus},
-    dma::{Dma, DmaBus},
-    interrupt::{Interrupt, InterruptState},
-    joypad::{Button, ButtonState, Joypad},
-    memory::{MemoryData, OamBytes, Palettes, VRamBytes},
-    ppu::{Ppu, PpuBus},
-    reg,
-    timer::{Timer, TimerBus},
-};
+use crate::{cpu::CpuBus, reg};
 
-const BOOT_ROM: &'static [u8] = include_bytes!("../sameboy_boot.bin");
+use super::{CgbSystem, BOOT_ROM};
+
 const NON_CGB_KEY0_VAL: u8 = 0x04;
 
-#[derive(PartialBorrow)]
-pub struct CgbSystem {
-    cpu: Cpu,
-    pub timer: Timer,
-    ppu: Ppu,
-    dma: Dma,
-    mem: MemoryData,
-    joypad: Joypad,
-    interrupt: InterruptState,
-    boot_rom_mapped: bool,
-    cgb_mode: bool,
-    key0: u8, // TODO: This can probably be combined with cgb_mode
-}
-
-impl CgbSystem {
-    pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
-        Box::new(CgbSystem {
-            cpu: Cpu::default(),
-            timer: Timer::new(),
-            dma: Dma::new(),
-            ppu: Ppu::new(),
-            mem: MemoryData::new(rom),
-            joypad: Joypad::new(),
-            interrupt: InterruptState::new(),
-            boot_rom_mapped: true,
-            cgb_mode: true,
-            key0: 0,
-        })
-    }
-
-    pub fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
-        let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.cpu, bus);
-    }
-
-    pub fn split_ppu(&mut self) -> (&mut Ppu, &mut impl PpuBus) {
-        let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.ppu, bus);
-    }
-
-    pub fn split_dma(&mut self) -> (&mut Dma, &mut impl DmaBus) {
-        let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.dma, bus);
-    }
-
-    pub fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
-        let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.timer, bus);
-    }
-
-    pub fn lcd_on(&self) -> bool {
-        self.ppu.lcdc & 0x80 != 0
-    }
-
-    pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
-        self.joypad.handle(button, state);
-    }
-}
-
-impl CpuBus for partial!(CgbSystem ! cpu, mut mem ppu timer dma joypad interrupt boot_rom_mapped cgb_mode key0) {
+impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
     fn read_8(&self, addr: u16) -> u8 {
         match (addr >> 8) as u8 {
             0x00..=0x00 | 0x02..=0x08 if *self.boot_rom_mapped => BOOT_ROM[addr as usize],
@@ -180,58 +113,5 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut mem ppu timer dma joypad interrupt
 
     fn pop_interrupt(&mut self) -> Option<u8> {
         self.interrupt.pop()
-    }
-}
-
-impl PpuBus for partial!(CgbSystem ! ppu, mut mem interrupt) {
-    fn trigger_vblank_interrupt(&mut self) {
-        self.interrupt.request(Interrupt::VBlank);
-    }
-
-    fn vram(&self) -> &VRamBytes {
-        &self.mem.vram.bytes()
-    }
-
-    fn bg_palette_ram(&self) -> &Palettes {
-        &self.mem.bg_palette.palettes()
-    }
-
-    fn obj_palette_ram(&self) -> &Palettes {
-        &self.mem.obj_palette.palettes()
-    }
-
-    fn oam(&self) -> &OamBytes {
-        &self.mem.oam
-    }
-
-    fn cgb_mode(&self) -> bool {
-        *self.cgb_mode
-    }
-}
-
-impl DmaBus for partial!(CgbSystem ! dma, mut mem) {
-    fn write_vram(&mut self, addr: u16, val: u8) {
-        self.mem.vram.write(addr, val, *self.cgb_mode);
-    }
-
-    fn oam_mut(&mut self) -> &mut OamBytes {
-        &mut self.mem.oam
-    }
-
-    fn read_8(&self, addr: u16) -> u8 {
-        match (addr >> 8) as u8 {
-            0x00..=0x00 | 0x02..=0x08 if *self.boot_rom_mapped => BOOT_ROM[addr as usize],
-            0x00..=0x7f => self.mem.cartrige_rom[addr as usize],
-            0x80..=0x9f => self.mem.vram.read(addr, *self.cgb_mode),
-            0xa0..=0xbf => self.mem.cartrige_ram[addr as usize & 0x1fff],
-            0xc0..=0xcf | 0xe0..=0xef => self.mem.wram.read_low(addr),
-            0xd0..=0xdf | 0xf0..=0xff => self.mem.wram.read_high(addr, *self.cgb_mode),
-        }
-    }
-}
-
-impl TimerBus for partial!(CgbSystem ! timer, mut mem interrupt) {
-    fn request_timer_interrupt(&mut self) {
-        self.interrupt.request(Interrupt::Timer);
     }
 }
