@@ -9,8 +9,12 @@ use crate::{
 use super::CgbSystem;
 
 impl PpuBus for partial!(CgbSystem ! ppu, mut mem interrupt) {
-    fn trigger_vblank_interrupt(&mut self) {
+    fn request_vblank_interrupt(&mut self) {
         self.interrupt.request(Interrupt::VBlank);
+    }
+
+    fn request_stat_interrupt(&mut self) {
+        self.interrupt.request(Interrupt::Stat);
     }
 
     fn vram(&self) -> &VRamBytes {

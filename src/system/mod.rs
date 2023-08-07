@@ -1,8 +1,8 @@
 mod cpu;
 mod dma;
+mod joypad;
 mod ppu;
 mod timer;
-mod joypad;
 
 use partial_borrow::{prelude::*, SplitOff};
 
@@ -69,7 +69,7 @@ impl CgbSystem {
     }
 
     pub fn lcd_on(&self) -> bool {
-        self.ppu.lcdc & 0x80 != 0
+        self.ppu.lcd_enabled()
     }
 
     pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {

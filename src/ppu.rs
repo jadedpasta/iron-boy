@@ -27,7 +27,8 @@ impl ModeState {
 }
 
 pub trait PpuBus {
-    fn trigger_vblank_interrupt(&mut self);
+    fn request_vblank_interrupt(&mut self);
+    fn request_stat_interrupt(&mut self);
 
     fn vram(&self) -> &VRamBytes;
     fn bg_palette_ram(&self) -> &Palettes;
@@ -40,13 +41,15 @@ pub trait PpuBus {
 pub struct Ppu {
     mode_cycles_remaining: usize,
     pub bgp: u8,
-    pub lcdc: u8,
-    pub ly: u8,
+    lcdc: u8,
+    ly: u8,
+    pub lyc: u8,
     pub obp0: u8,
     pub obp1: u8,
     pub scx: u8,
     pub scy: u8,
     stat: u8,
+    interrupt_line: bool,
 }
 
 type Obj = [u8; 4];
@@ -76,11 +79,13 @@ impl Ppu {
             bgp: 0,
             lcdc: 0,
             ly: 0,
+            lyc: 0,
             obp0: 0,
             obp1: 0,
             scx: 0,
             scy: 0,
             stat: mode_state as u8,
+            interrupt_line: false,
         }
     }
 
@@ -249,7 +254,7 @@ impl Ppu {
 
     fn switch_mode(&mut self, mode: ModeState) {
         self.mode_cycles_remaining = mode.cycles();
-        self.stat &= 0xfc;
+        self.stat &= !0x03;
         self.stat |= mode as u8;
     }
 
@@ -258,21 +263,42 @@ impl Ppu {
     }
 
     pub fn stat(&self) -> u8 {
-        self.stat
+        if self.lcd_enabled() {
+            self.stat
+        } else {
+            0
+        }
     }
 
     pub fn set_stat(&mut self, stat: u8) {
-        self.stat &= 0x3;
-        self.stat |= stat & 0xfc;
+        self.stat &= 0x07;
+        self.stat |= stat & !0x07;
+    }
+
+    pub fn ly(&self) -> u8 {
+        self.ly
+    }
+
+    pub fn lcdc(&self) -> u8 {
+        self.lcdc
+    }
+
+    pub fn lcd_enabled(&self) -> bool {
+        self.lcdc & 0x80 != 0
+    }
+
+    pub fn set_lcdc(&mut self, lcdc: u8) {
+        self.lcdc = lcdc;
+
+        if !self.lcd_enabled() {
+            self.ly = 0;
+            self.switch_mode(ModeState::OamSearch);
+            self.interrupt_line = false;
+        }
     }
 
     pub fn execute(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
-        let lcd_enabled = self.lcdc & 0x80 != 0;
-
-        if !lcd_enabled {
-            // TODO: Ideally we would do this only on the first dot after the LCD is disabled.
-            self.ly = 0;
-            self.switch_mode(ModeState::OamSearch);
+        if !self.lcd_enabled() {
             return;
         }
 
@@ -293,7 +319,7 @@ impl Ppu {
             ModeState::HBlank => {
                 self.ly += 1;
                 self.switch_mode(if self.ly == Cgb::SCREEN_HEIGHT as u8 {
-                    bus.trigger_vblank_interrupt();
+                    bus.request_vblank_interrupt();
                     ModeState::VBlank
                 } else {
                     ModeState::OamSearch
@@ -309,6 +335,27 @@ impl Ppu {
                 }
             }
         }
+
+        let lyc_equal = self.ly == self.lyc;
+        self.stat &= !0x4;
+        self.stat |= (lyc_equal as u8) << 2;
+
+        let interrupt_line = (lyc_equal && self.stat & 0x40 != 0) || {
+            let mode_mask = match self.mode_state() {
+                ModeState::Transfer => 0x00,
+                ModeState::HBlank => 0x08,
+                ModeState::VBlank => 0x10,
+                ModeState::OamSearch => 0x20,
+            };
+            self.stat & mode_mask != 0
+        };
+
+        if interrupt_line && !self.interrupt_line {
+            // "STAT blocking": only request interrupts on the rising edge
+            bus.request_stat_interrupt();
+            println!("Requested");
+        }
+        self.interrupt_line = interrupt_line;
     }
 }
 
@@ -341,7 +388,8 @@ mod tests {
     }
 
     impl PpuBus for Bus {
-        fn trigger_vblank_interrupt(&mut self) {}
+        fn request_vblank_interrupt(&mut self) {}
+        fn request_stat_interrupt(&mut self) {}
 
         fn vram(&self) -> &VRamBytes {
             &self.vram

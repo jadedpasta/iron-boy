@@ -51,8 +51,12 @@ impl Cgb {
             let (timer, bus) = self.system.split_timer();
             timer.execute(bus);
             if !lcd_on && self.system.lcd_on() {
-                return;
+                break;
             }
+        }
+
+        if !lcd_on {
+            *frame_buff = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         }
     }
 

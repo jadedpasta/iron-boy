@@ -3,6 +3,7 @@ pub enum Interrupt {
     VBlank = 0,
     Stat,
     Timer,
+    #[allow(unused)]
     Serial,
     Joypad,
 }
