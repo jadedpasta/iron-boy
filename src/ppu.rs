@@ -144,8 +144,8 @@ impl Ppu {
             .filter(|obj| obj[1] <= target && target < obj[1] + 8)
             .next() else { return None; };
 
-        let y_flip = obj[3] & 0x20 != 0;
-        let x_flip = obj[3] & 0x10 != 0;
+        let y_flip = obj[3] & 0x40 != 0;
+        let x_flip = obj[3] & 0x20 != 0;
         let tile_id = if self.lcdc & 0x4 == 0 {
             // 8x8 mode
             obj[2]
