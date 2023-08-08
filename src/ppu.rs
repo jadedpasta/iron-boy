@@ -138,44 +138,52 @@ impl Ppu {
         let vram = bus.vram();
         let target = lx + 8;
 
-        let Some(obj) = selected_objs
+        for obj in selected_objs
             .iter()
             .map(|i| &objs[*i as usize])
             .filter(|obj| obj[1] <= target && target < obj[1] + 8)
-            .next() else { return None; };
+        {
+            let y_flip = obj[3] & 0x40 != 0;
+            let x_flip = obj[3] & 0x20 != 0;
+            let tile_id = if self.lcdc & 0x4 == 0 {
+                // 8x8 mode
+                obj[2]
+            } else {
+                // 8x16 mode
+                obj[2] & 0xfe | (((self.ly + 8 > obj[0]) ^ y_flip) as u8)
+            };
 
-        let y_flip = obj[3] & 0x40 != 0;
-        let x_flip = obj[3] & 0x20 != 0;
-        let tile_id = if self.lcdc & 0x4 == 0 {
-            // 8x8 mode
-            obj[2]
-        } else {
-            // 8x16 mode
-            obj[2] & 0xfe | (((self.ly + 8 > obj[0]) ^ y_flip) as u8)
-        };
+            let mut y_offset = obj_target_y - obj[0];
+            if y_flip {
+                y_offset = 7 - y_offset;
+            }
 
-        let mut y_offset = obj_target_y - obj[0];
-        if y_flip {
-            y_offset = 7 - y_offset;
+            let vram_addr = ((tile_id as usize) << 4) | ((y_offset as usize) << 1);
+            let vram_bank = &vram[if bus.cgb_mode() { (obj[3] >> 3) as usize & 0x1 } else { 0 }];
+            let color_low = vram_bank[vram_addr];
+            let color_high = vram_bank[vram_addr + 1];
+
+            let mut color_bit = target - obj[1];
+            if !x_flip {
+                color_bit = 7 - color_bit;
+            }
+            let color_low = (color_low >> color_bit) & 0x1;
+            let color_high = (color_high >> color_bit) & 0x1;
+            let color = (color_high << 1) | color_low;
+
+            if color == 0 {
+                // color 0 is transparent for OBJs. There could be another OBJ overlapping; try the
+                // next one
+                continue;
+            }
+
+            return Some(ObjPixel {
+                color,
+                palette: if bus.cgb_mode() { obj[3] & 0x7 } else { (obj[3] >> 4) & 0x1 },
+                bg_over_obj: obj[3] & 0x80 != 0,
+            });
         }
-
-        let vram_addr = ((tile_id as usize) << 4) | ((y_offset as usize) << 1);
-        let vram_bank = &vram[if bus.cgb_mode() { (obj[3] >> 3) as usize & 0x1 } else { 0 }];
-        let color_low = vram_bank[vram_addr];
-        let color_high = vram_bank[vram_addr + 1];
-
-        let mut color_bit = target - obj[1];
-        if !x_flip {
-            color_bit = 7 - color_bit;
-        }
-        let color_low = (color_low >> color_bit) & 0x1;
-        let color_high = (color_high >> color_bit) & 0x1;
-        let color = (color_high << 1) | color_low;
-        Some(ObjPixel {
-            color,
-            palette: if bus.cgb_mode() { obj[3] & 0x7 } else { (obj[3] >> 4) & 0x1 },
-            bg_over_obj: obj[3] & 0x80 != 0,
-        })
+        return None;
     }
 
     fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, bus: &impl PpuBus) -> u16 {
@@ -184,13 +192,12 @@ impl Ppu {
 
         let bg_enable_pri = self.lcdc & 0x1 != 0;
         if let Some(obj_pixel) = obj_pixel {
-            let obj_priority = obj_pixel.color != 0
-                && (bg_pixel.color == 0
-                    || if bus.cgb_mode() {
-                        !bg_enable_pri || !bg_pixel.bg_over_obj && !obj_pixel.bg_over_obj
-                    } else {
-                        !obj_pixel.bg_over_obj
-                    });
+            let obj_priority = bg_pixel.color == 0
+                || if bus.cgb_mode() {
+                    !bg_enable_pri || !bg_pixel.bg_over_obj && !obj_pixel.bg_over_obj
+                } else {
+                    !obj_pixel.bg_over_obj
+                };
             if obj_priority {
                 let (color, palette) = if bus.cgb_mode() {
                     (obj_pixel.color, obj_pixel.palette)
