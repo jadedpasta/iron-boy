@@ -245,9 +245,9 @@ impl Cpu {
             LdIncDecA(inc_dec) => self.load_inc_dec_a(inc_dec, bus),
             LdAIncDec(inc_dec) => self.load_a_inc_dec(inc_dec, bus),
             Ld16(reg) => self.load_16(reg, bus),
-            // LdMemSp => (),
-            // LdHlSpInc => (),
-            // LdSpHl => (),
+            LdMemSp => self.load_imm_mem_sp(bus),
+            LdHlSpInc => self.load_hl_sp_imm_inc(bus),
+            LdSpHl => self.load_sp_hl(),
             Pop(reg) => self.pop(reg, bus),
             Push(reg) => self.push(reg, bus),
             Bit(bit, var) => self.bit(bit, var, bus),
@@ -280,7 +280,7 @@ impl Cpu {
             Dec16(reg) => self.dec_16(reg),
             Inc16(reg) => self.inc_16(reg),
             AddHl(reg) => self.add_hl(reg),
-            // AddSp => (),
+            AddSp => self.add_sp(bus),
             Ccf => self.ccf(),
             Scf => self.scf(),
             Call(None) => self.call(bus),
@@ -299,7 +299,6 @@ impl Cpu {
             Halt => self.halt(),
             Stop => self.stop(bus),
             Illegal => panic!("Tried to execute illegal instruction"),
-            inst => unimplemented!("{:?}", inst),
         }
     }
 

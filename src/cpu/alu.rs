@@ -292,6 +292,25 @@ impl Cpu {
         self.regs.set_flags(Flag::SUB | Flag::HALF_CARRY, false);
         self.regs.set_flags(Flag::CARRY, true);
     }
+
+    fn sp_imm_inc(&mut self, bus: &mut impl CpuBus) -> u16 {
+        let sp = self.regs[Reg16::SP];
+        let imm = self.read_immedate_8(bus);
+
+        let [mut low, _] = sp.to_le_bytes();
+        let (carry, half_carry) = add_impl(&mut low, imm);
+
+        self.regs[Reg8::F] = Flag::carry(carry) | Flag::half_carry(half_carry);
+        sp.wrapping_add_signed(imm as i8 as i16)
+    }
+
+    pub(super) fn load_hl_sp_imm_inc(&mut self, bus: &mut impl CpuBus) {
+        self.regs[Reg16::HL] = self.sp_imm_inc(bus);
+    }
+
+    pub(super) fn add_sp(&mut self, bus: &mut impl CpuBus) {
+        self.regs[Reg16::SP] = self.sp_imm_inc(bus);
+    }
 }
 
 #[cfg(test)]

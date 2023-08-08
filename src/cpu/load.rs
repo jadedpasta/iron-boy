@@ -22,7 +22,8 @@ impl Cpu {
     }
 
     pub(super) fn load_a_imm_mem(&mut self, bus: &mut impl CpuBus) {
-        self.regs[Reg8::A] = bus.read_8(self.read_immedate_16(bus));
+        let addr = self.read_immedate_16(bus);
+        self.regs[Reg8::A] = bus.read_8(addr);
     }
 
     pub(super) fn load_high_imm_mem_a(&mut self, bus: &mut impl CpuBus) {
@@ -65,6 +66,14 @@ impl Cpu {
 
     pub(super) fn load_16(&mut self, reg: Reg16, bus: &impl CpuBus) {
         self.regs[reg] = self.read_immedate_16(bus);
+    }
+
+    pub(super) fn load_imm_mem_sp(&mut self, bus: &mut impl CpuBus) {
+        bus.write_16(self.read_immedate_16(bus), self.regs[Reg16::SP]);
+    }
+
+    pub(super) fn load_sp_hl(&mut self) {
+        self.regs[Reg16::SP] = self.regs[Reg16::HL];
     }
 
     pub(super) fn push(&mut self, reg: Reg16, bus: &mut impl CpuBus) {
