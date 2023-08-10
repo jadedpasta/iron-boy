@@ -80,7 +80,7 @@ impl Timer {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     struct InterruptModerator<F> {

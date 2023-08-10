@@ -469,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scroll_x() {
+    fn scroll_x() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scx in 0..=255 {
             ctx.ppu.scx = scx;
@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scroll_y() {
+    fn scroll_y() {
         let mut ctx = Context::new(checkerboard_vram_init);
         for scy in 0..=255 {
             ctx.ppu.scy = scy;
