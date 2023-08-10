@@ -1,21 +1,23 @@
 use std::mem;
 
+use bilge::prelude::*;
+
 use crate::{
     memory::{OamBytes, Palettes, VRamBytes},
     Cgb, FrameBuffer,
 };
 
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(u8)]
-enum ModeState {
-    HBlank = 0,
+#[bitsize(2)]
+#[derive(FromBits, Debug, Default, Clone, Copy)]
+enum Mode {
+    HBlank,
     VBlank,
     #[default]
     OamSearch,
     Transfer,
 }
 
-impl ModeState {
+impl Mode {
     const fn cycles(&self) -> usize {
         match self {
             Self::OamSearch => 21,
@@ -24,6 +26,24 @@ impl ModeState {
             Self::VBlank => 114,
         }
     }
+}
+
+#[bitsize(4)]
+#[derive(FromBits, DebugBits, DefaultBits, Clone, Copy)]
+struct StatInterruptSources {
+    hblank: bool,
+    vblank: bool,
+    oam: bool,
+    lyc_equal: bool,
+}
+
+#[bitsize(8)]
+#[derive(FromBits, DebugBits, DefaultBits, Clone, Copy)]
+struct Stat {
+    mode: Mode,
+    lyc_equal: bool,
+    int_sources: StatInterruptSources,
+    __: u1,
 }
 
 pub trait PpuBus {
@@ -48,7 +68,7 @@ pub struct Ppu {
     pub obp1: u8,
     pub scx: u8,
     pub scy: u8,
-    stat: u8,
+    stat: Stat,
     interrupt_line: bool,
 }
 
@@ -73,9 +93,9 @@ struct BgPixel {
 
 impl Ppu {
     pub fn new() -> Self {
-        let mode_state = ModeState::default();
+        let stat = Stat::default();
         Self {
-            mode_cycles_remaining: mode_state.cycles(),
+            mode_cycles_remaining: stat.mode().cycles(),
             bgp: 0,
             lcdc: 0,
             ly: 0,
@@ -84,7 +104,7 @@ impl Ppu {
             obp1: 0,
             scx: 0,
             scy: 0,
-            stat: mode_state as u8,
+            stat,
             interrupt_line: false,
         }
     }
@@ -259,27 +279,22 @@ impl Ppu {
         }
     }
 
-    fn switch_mode(&mut self, mode: ModeState) {
+    fn switch_mode(&mut self, mode: Mode) {
         self.mode_cycles_remaining = mode.cycles();
-        self.stat &= !0x03;
-        self.stat |= mode as u8;
-    }
-
-    fn mode_state(&self) -> ModeState {
-        unsafe { mem::transmute(self.stat & 0x3) }
+        self.stat.set_mode(mode)
     }
 
     pub fn stat(&self) -> u8 {
         if self.lcd_enabled() {
-            self.stat
+            self.stat.into()
         } else {
             0
         }
     }
 
     pub fn set_stat(&mut self, stat: u8) {
-        self.stat &= 0x07;
-        self.stat |= stat & !0x07;
+        let stat = Stat::from(stat);
+        self.stat.set_int_sources(stat.int_sources())
     }
 
     pub fn ly(&self) -> u8 {
@@ -299,7 +314,7 @@ impl Ppu {
 
         if !self.lcd_enabled() {
             self.ly = 0;
-            self.switch_mode(ModeState::OamSearch);
+            self.switch_mode(Mode::OamSearch);
             self.interrupt_line = false;
         }
     }
@@ -317,44 +332,44 @@ impl Ppu {
         }
         self.mode_cycles_remaining = 0;
 
-        match self.mode_state() {
-            ModeState::OamSearch => self.switch_mode(ModeState::Transfer),
-            ModeState::Transfer => {
+        match self.stat.mode() {
+            Mode::OamSearch => self.switch_mode(Mode::Transfer),
+            Mode::Transfer => {
                 self.draw_scanline(frame_buff, bus);
-                self.switch_mode(ModeState::HBlank);
+                self.switch_mode(Mode::HBlank);
             }
-            ModeState::HBlank => {
+            Mode::HBlank => {
                 self.ly += 1;
                 self.switch_mode(if self.ly == Cgb::SCREEN_HEIGHT as u8 {
                     bus.request_vblank_interrupt();
-                    ModeState::VBlank
+                    Mode::VBlank
                 } else {
-                    ModeState::OamSearch
+                    Mode::OamSearch
                 });
             }
-            ModeState::VBlank => {
+            Mode::VBlank => {
                 self.ly += 1;
                 if self.ly == Cgb::FRAME_LINES as u8 {
                     self.ly = 0;
-                    self.switch_mode(ModeState::OamSearch);
+                    self.switch_mode(Mode::OamSearch);
                 } else {
-                    self.mode_cycles_remaining = ModeState::VBlank.cycles();
+                    self.mode_cycles_remaining = Mode::VBlank.cycles();
                 }
             }
         }
 
         let lyc_equal = self.ly == self.lyc;
-        self.stat &= !0x4;
-        self.stat |= (lyc_equal as u8) << 2;
+        self.stat.set_lyc_equal(lyc_equal);
 
-        let interrupt_line = (lyc_equal && self.stat & 0x40 != 0) || {
-            let mode_mask = match self.mode_state() {
-                ModeState::Transfer => 0x00,
-                ModeState::HBlank => 0x08,
-                ModeState::VBlank => 0x10,
-                ModeState::OamSearch => 0x20,
-            };
-            self.stat & mode_mask != 0
+        let int_sources = self.stat.int_sources();
+
+        let interrupt_line = (lyc_equal && int_sources.lyc_equal()) || {
+            match self.stat.mode() {
+                Mode::Transfer => false,
+                Mode::HBlank => int_sources.hblank(),
+                Mode::VBlank => int_sources.vblank(),
+                Mode::OamSearch => int_sources.oam(),
+            }
         };
 
         if interrupt_line && !self.interrupt_line {
@@ -438,8 +453,8 @@ mod tests {
         }
 
         fn draw_frame(&mut self) {
-            let mode = self.ppu.mode_state();
-            assert!(mode as u8 == ModeState::OamSearch as u8, "Started frame in {mode:?}");
+            let mode = self.ppu.stat.mode();
+            assert!(mode as u8 == Mode::OamSearch as u8, "Started frame in {mode:?}");
             for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
                 self.ppu.execute(&mut self.frame_buff, &mut *self.bus);
             }
