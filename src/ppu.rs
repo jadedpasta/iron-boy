@@ -1,5 +1,3 @@
-use std::mem;
-
 use bilge::prelude::*;
 
 use crate::{
@@ -46,6 +44,40 @@ struct Stat {
     __: u1,
 }
 
+#[bitsize(8)]
+#[derive(FromBits, DebugBits, Clone, Copy)]
+struct Lcdc {
+    bg_window_enable_priority: bool,
+    obj_enabled: bool,
+    tall_obj_enabled: bool,
+    bg_map_bit: u1,
+    tile_data_bit: u1,
+    window_enabled: bool,
+    window_map_bit: u1,
+    lcd_enabled: bool,
+}
+
+#[bitsize(8)]
+#[repr(transparent)]
+pub struct ObjAttrs {
+    palette: u3,
+    bank: u1,
+    palette_dmg: u1,
+    x_flipped: bool,
+    y_flipped: bool,
+    bg_over_obj: bool,
+}
+
+#[repr(C, packed)]
+struct Obj {
+    y: u8,
+    x: u8,
+    tile: u8,
+    attrs: ObjAttrs,
+}
+
+type Objs = [Obj; 40];
+
 pub trait PpuBus {
     fn request_vblank_interrupt(&mut self);
     fn request_stat_interrupt(&mut self);
@@ -54,14 +86,24 @@ pub trait PpuBus {
     fn bg_palette_ram(&self) -> &Palettes;
     fn obj_palette_ram(&self) -> &Palettes;
     fn oam(&self) -> &OamBytes;
+
     fn cgb_mode(&self) -> bool;
 }
+
+// Use a separate extension trait so that Obj can be private
+trait ObjView: PpuBus {
+    fn objs(&self) -> &Objs {
+        let oam = self.oam();
+        unsafe { &*(oam as *const _ as *const _) }
+    }
+}
+impl<T: PpuBus> ObjView for T {}
 
 #[derive(Debug)]
 pub struct Ppu {
     mode_cycles_remaining: usize,
     pub bgp: u8,
-    lcdc: u8,
+    lcdc: Lcdc,
     ly: u8,
     pub lyc: u8,
     pub obp0: u8,
@@ -70,13 +112,6 @@ pub struct Ppu {
     pub scy: u8,
     stat: Stat,
     interrupt_line: bool,
-}
-
-type Obj = [u8; 4];
-type Objs = [Obj; 40];
-
-fn ram_to_objs(ram: &OamBytes) -> &Objs {
-    unsafe { mem::transmute(ram) }
 }
 
 struct ObjPixel {
@@ -97,7 +132,7 @@ impl Ppu {
         Self {
             mode_cycles_remaining: stat.mode().cycles(),
             bgp: 0,
-            lcdc: 0,
+            lcdc: Lcdc::from(0),
             ly: 0,
             lyc: 0,
             obp0: 0,
@@ -114,7 +149,7 @@ impl Ppu {
 
         let pixel_x = lx.wrapping_add(self.scx);
         // Compute the tilemap address
-        let map_area_bit = ((self.lcdc >> 3) & 0x1) as usize;
+        let map_area_bit = self.lcdc.bg_map_bit().value() as usize;
         let tile_x = pixel_x / 8;
         let vram_addr = 0x1800 | (map_area_bit << 10) | ((tile_y as usize) << 5) | tile_x as usize;
         // Grab the tile ID and attributes from the tile map
@@ -123,7 +158,7 @@ impl Ppu {
 
         // Grab the pixel data corresponding to that tile ID
         let y_offset = pixel_y & 0x7;
-        let addr_mode_bit = !((self.lcdc >> 4) | (tile_id >> 7)) & 0x1;
+        let addr_mode_bit = !(self.lcdc.tile_data_bit().value() | (tile_id >> 7)) & 0x1;
         let vram_addr = ((addr_mode_bit as usize) << 12)
             | ((tile_id as usize) << 4)
             | ((y_offset as usize) << 1);
@@ -147,11 +182,9 @@ impl Ppu {
         lx: u8,
         obj_target_y: u8,
         selected_objs: &Vec<usize>,
-        objs: &Objs,
         bus: &impl PpuBus,
     ) -> Option<ObjPixel> {
-        if self.lcdc & 0x2 == 0 {
-            // OBJ is disabled
+        if !self.lcdc.obj_enabled() {
             return None;
         }
 
@@ -160,30 +193,31 @@ impl Ppu {
 
         for obj in selected_objs
             .iter()
-            .map(|i| &objs[*i as usize])
-            .filter(|obj| obj[1] <= target && target < obj[1] + 8)
+            .map(|i| &bus.objs()[*i as usize])
+            .filter(|obj| obj.x <= target && target < obj.x + 8)
         {
-            let y_flip = obj[3] & 0x40 != 0;
-            let x_flip = obj[3] & 0x20 != 0;
-            let tile_id = if self.lcdc & 0x4 == 0 {
-                // 8x8 mode
-                obj[2]
-            } else {
+            let x_flip = obj.attrs.x_flipped();
+            let y_flip = obj.attrs.y_flipped();
+            let tile_id = if self.lcdc.tall_obj_enabled() {
                 // 8x16 mode
-                obj[2] & 0xfe | (((self.ly + 8 > obj[0]) ^ y_flip) as u8)
+                obj.tile & 0xfe | (((self.ly + 8 > obj.x) ^ y_flip) as u8)
+            } else {
+                // 8x8 mode
+                obj.tile
             };
 
-            let mut y_offset = obj_target_y - obj[0];
+            let mut y_offset = obj_target_y - obj.y;
             if y_flip {
                 y_offset = 7 - y_offset;
             }
 
             let vram_addr = ((tile_id as usize) << 4) | ((y_offset as usize) << 1);
-            let vram_bank = &vram[if bus.cgb_mode() { (obj[3] >> 3) as usize & 0x1 } else { 0 }];
+            let bank = if bus.cgb_mode() { obj.attrs.bank().value() as usize } else { 0 };
+            let vram_bank = &vram[bank];
             let color_low = vram_bank[vram_addr];
             let color_high = vram_bank[vram_addr + 1];
 
-            let mut color_bit = target - obj[1];
+            let mut color_bit = target - obj.x;
             if !x_flip {
                 color_bit = 7 - color_bit;
             }
@@ -199,8 +233,12 @@ impl Ppu {
 
             return Some(ObjPixel {
                 color,
-                palette: if bus.cgb_mode() { obj[3] & 0x7 } else { (obj[3] >> 4) & 0x1 },
-                bg_over_obj: obj[3] & 0x80 != 0,
+                palette: if bus.cgb_mode() {
+                    obj.attrs.palette().value()
+                } else {
+                    obj.attrs.palette_dmg().value()
+                },
+                bg_over_obj: obj.attrs.bg_over_obj(),
             });
         }
         return None;
@@ -210,7 +248,7 @@ impl Ppu {
         let bg_palettes = bus.bg_palette_ram();
         let obj_palettes = bus.obj_palette_ram();
 
-        let bg_enable_pri = self.lcdc & 0x1 != 0;
+        let bg_enable_pri = self.lcdc.bg_window_enable_priority();
         if let Some(obj_pixel) = obj_pixel {
             let obj_priority = bg_pixel.color == 0
                 || if bus.cgb_mode() {
@@ -245,13 +283,16 @@ impl Ppu {
 
     fn draw_scanline(&self, frame_buff: &mut FrameBuffer, bus: &impl PpuBus) {
         // OAM Search
-        let objs = ram_to_objs(bus.oam());
-        let height = (((self.lcdc >> 2) & 0x1) + 1) * 8; // 8 or 16
+        let objs = bus.objs();
+        let height = match self.lcdc.tall_obj_enabled() {
+            true => 16,
+            false => 8,
+        };
         let obj_target_y = self.ly + 16;
         let mut selected_objs: Vec<usize> = objs
             .iter()
             .enumerate()
-            .filter(|(_, obj)| obj[0] <= obj_target_y && obj_target_y < obj[0] + height)
+            .filter(|(_, obj)| obj.y <= obj_target_y && obj_target_y < obj.y + height)
             .map(|(i, _)| i)
             .take(10)
             .collect();
@@ -259,13 +300,13 @@ impl Ppu {
         if !bus.cgb_mode() {
             // In compatibility mode, objs with smaller x-coordinate have higher priority. A stable
             // sort is required.
-            selected_objs.sort_by_key(|i| objs[*i][1]);
+            selected_objs.sort_by_key(|i| objs[*i].x);
         }
 
         let pixel_y = self.ly.wrapping_add(self.scy);
         let tile_y = pixel_y / 8;
         for lx in 0..Cgb::SCREEN_WIDTH as u8 {
-            let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, objs, bus);
+            let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, bus);
 
             let bg_pixel = self.fetch_bg_pixel(lx, pixel_y, tile_y, bus);
 
@@ -302,17 +343,17 @@ impl Ppu {
     }
 
     pub fn lcdc(&self) -> u8 {
-        self.lcdc
+        self.lcdc.into()
     }
 
     pub fn lcd_enabled(&self) -> bool {
-        self.lcdc & 0x80 != 0
+        self.lcdc.lcd_enabled()
     }
 
     pub fn set_lcdc(&mut self, lcdc: u8) {
-        self.lcdc = lcdc;
+        self.lcdc = Lcdc::from(lcdc);
 
-        if !self.lcd_enabled() {
+        if !self.lcdc.lcd_enabled() {
             self.ly = 0;
             self.switch_mode(Mode::OamSearch);
             self.interrupt_line = false;
@@ -448,7 +489,8 @@ mod tests {
                 [0xffff, 0x1f << 10, 0x1f << 5, 0x1f].into_iter().map(u16::to_le_bytes).collect();
             bus.bg_palette_ram[0].copy_from_slice(&palette);
             let mut ppu = Ppu::new();
-            ppu.lcdc = 0x90;
+            ppu.lcdc.set_lcd_enabled(true);
+            ppu.lcdc.set_tile_data_bit(true.into());
             Self { ppu, bus, frame_buff: unsafe { MaybeUninit::zeroed().assume_init() } }
         }
 
