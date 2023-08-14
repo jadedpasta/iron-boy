@@ -430,7 +430,6 @@ impl Ppu {
         if interrupt_line && !self.interrupt_line {
             // "STAT blocking": only request interrupts on the rising edge
             bus.request_stat_interrupt();
-            println!("Requested");
         }
         self.interrupt_line = interrupt_line;
     }
