@@ -60,6 +60,7 @@ struct Lcdc {
 }
 
 #[bitsize(8)]
+#[derive(DebugBits, Clone, Copy)]
 #[repr(transparent)]
 pub struct ObjAttrs {
     palette: u3,
@@ -70,6 +71,7 @@ pub struct ObjAttrs {
     bg_over_obj: bool,
 }
 
+#[derive(Debug)]
 #[repr(C, packed)]
 struct Obj {
     y: u8,
@@ -182,7 +184,7 @@ impl Ppu {
     fn fetch_obj_pixel(
         &self,
         lx: u8,
-        obj_target_y: u8,
+        target_y: u8,
         selected_objs: &[usize],
         bus: &impl PpuBus,
     ) -> Option<ObjPixel> {
@@ -191,24 +193,37 @@ impl Ppu {
         }
 
         let vram = bus.vram();
-        let target = lx + 8;
+        let target_x = lx + 8;
 
         for obj in selected_objs
             .iter()
             .map(|i| &bus.objs()[*i])
-            .filter(|obj| obj.x <= target && target < obj.x + 8)
+            .filter(|obj| obj.x <= target_x && target_x < obj.x + 8)
         {
             let x_flip = obj.attrs.x_flipped();
             let y_flip = obj.attrs.y_flipped();
-            let tile_id = if self.lcdc.tall_obj_enabled() {
+            let (tile_id, tile_y) = if self.lcdc.tall_obj_enabled() {
                 // 8x16 mode
-                obj.tile & 0xfe | (((self.ly + 8 > obj.x) ^ y_flip) as u8)
+
+                // The bottom tile is 8px below the start of the sprite
+                let bottom_tile_y = obj.y + 8;
+
+                // We are rendering the bottom of the sprite if the target Y is in the bottom tile
+                let bottom_tile = target_y >= bottom_tile_y;
+
+                // The tile ID should be offset by 1 for the bottom tile, unless the OBJ is also
+                // y-flipped. LSB of the tile ID is ignored.
+                let tile_id = obj.tile & 0xfe | ((bottom_tile ^ y_flip) as u8);
+
+                let tile_y = if bottom_tile { bottom_tile_y } else { obj.y };
+
+                (tile_id, tile_y)
             } else {
                 // 8x8 mode
-                obj.tile
+                (obj.tile, obj.y)
             };
 
-            let mut y_offset = obj_target_y - obj.y;
+            let mut y_offset = target_y - tile_y;
             if y_flip {
                 y_offset = 7 - y_offset;
             }
@@ -219,7 +234,7 @@ impl Ppu {
             let color_low = vram_bank[vram_addr];
             let color_high = vram_bank[vram_addr + 1];
 
-            let mut color_bit = target - obj.x;
+            let mut color_bit = target_x - obj.x;
             if !x_flip {
                 color_bit = 7 - color_bit;
             }
