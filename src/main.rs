@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
+
+#![allow(clippy::new_without_default)]
+
 mod cart;
 mod cpu;
 mod dma;

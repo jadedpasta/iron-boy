@@ -183,7 +183,7 @@ impl Ppu {
         &self,
         lx: u8,
         obj_target_y: u8,
-        selected_objs: &Vec<usize>,
+        selected_objs: &[usize],
         bus: &impl PpuBus,
     ) -> Option<ObjPixel> {
         if !self.lcdc.obj_enabled() {
@@ -195,7 +195,7 @@ impl Ppu {
 
         for obj in selected_objs
             .iter()
-            .map(|i| &bus.objs()[*i as usize])
+            .map(|i| &bus.objs()[*i])
             .filter(|obj| obj.x <= target && target < obj.x + 8)
         {
             let x_flip = obj.attrs.x_flipped();
@@ -243,7 +243,7 @@ impl Ppu {
                 bg_over_obj: obj.attrs.bg_over_obj(),
             });
         }
-        return None;
+        None
     }
 
     fn mix_pixels(&self, bg_pixel: BgPixel, obj_pixel: Option<ObjPixel>, bus: &impl PpuBus) -> u16 {

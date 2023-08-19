@@ -20,15 +20,15 @@ impl PpuBus for partial!(CgbSystem ! ppu, mut mem interrupt) {
     }
 
     fn vram(&self) -> &VRamBytes {
-        &self.mem.vram.bytes()
+        self.mem.vram.bytes()
     }
 
     fn bg_palette_ram(&self) -> &Palettes {
-        &self.mem.bg_palette.palettes()
+        self.mem.bg_palette.palettes()
     }
 
     fn obj_palette_ram(&self) -> &Palettes {
-        &self.mem.obj_palette.palettes()
+        self.mem.obj_palette.palettes()
     }
 
     fn oam(&self) -> &OamBytes {

@@ -19,7 +19,7 @@ use crate::{
     timer::{Timer, TimerBus},
 };
 
-const BOOT_ROM: &'static [u8] = include_bytes!("../../sameboy_boot.bin");
+const BOOT_ROM: &[u8] = include_bytes!("../../sameboy_boot.bin");
 
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
@@ -55,22 +55,22 @@ impl CgbSystem {
 
     pub fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.cpu, bus);
+        (&mut system.cpu, bus)
     }
 
     pub fn split_ppu(&mut self) -> (&mut Ppu, &mut impl PpuBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.ppu, bus);
+        (&mut system.ppu, bus)
     }
 
     pub fn split_dma(&mut self) -> (&mut Dma, &mut impl DmaBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.dma, bus);
+        (&mut system.dma, bus)
     }
 
     pub fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
-        return (&mut system.timer, bus);
+        (&mut system.timer, bus)
     }
 
     pub fn lcd_on(&self) -> bool {

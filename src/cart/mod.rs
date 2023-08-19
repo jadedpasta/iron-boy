@@ -32,7 +32,7 @@ fn header(rom: &[u8]) -> (u8, usize, usize) {
     let cart_type = rom[0x147];
     let rom_size = match rom[0x148] {
         id @ 0x0..=0x8 => 1 << (id + 15),
-        id @ _ => panic!("Unknown ROM size ID: {id:x}"),
+        id => panic!("Unknown ROM size ID: {id:x}"),
     };
     let ram_size = match rom[0x149] {
         0x00 => 0,
@@ -40,7 +40,7 @@ fn header(rom: &[u8]) -> (u8, usize, usize) {
         0x03 => 0x8000,
         0x04 => 0x20000,
         0x05 => 0x10000,
-        id @ _ => panic!("Unknown RAM size ID: {id:x}"),
+        id => panic!("Unknown RAM size ID: {id:x}"),
     };
     (cart_type, rom_size, ram_size)
 }

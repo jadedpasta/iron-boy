@@ -87,12 +87,12 @@ impl Cpu {
         }
     }
 
-    const SPEED_REG_ADDR: u16 = 0xff4D;
+    const SPEED_REG_ADDR: u16 = 0xff4d;
     pub(super) fn stop(&mut self, bus: &mut impl CpuBus) {
         let _ = self.read_immedate_8(bus);
         let mut reg = bus.read_8(Self::SPEED_REG_ADDR);
         if reg & 0x1 != 0 {
-            // TODO: Implement this more accurately
+            // TODO: This doesn't work really at all
             reg ^= 0x81;
             bus.write_8(Self::SPEED_REG_ADDR, reg);
         } else {

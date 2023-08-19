@@ -199,13 +199,13 @@ impl Cpu {
     fn read_immedate_8(&mut self, bus: &impl CpuBus) -> u8 {
         let val = bus.read_8(self.pc);
         self.pc = self.pc.wrapping_add(1);
-        return val;
+        val
     }
 
     fn read_immedate_16(&mut self, bus: &impl CpuBus) -> u16 {
         let val = bus.read_16(self.pc);
         self.pc = self.pc.wrapping_add(2);
-        return val;
+        val
     }
 
     fn read_var(&self, var: Var8, bus: &impl CpuBus) -> u8 {
@@ -335,7 +335,7 @@ impl Cpu {
             #[cfg(feature = "cpu-debug")]
             println!("{:?}", entry.instruction);
 
-            self.execute_instruction(bus, &entry);
+            self.execute_instruction(bus, entry);
         }
         self.update_interrupt_timer();
         self.cycles_remaining -= 1;

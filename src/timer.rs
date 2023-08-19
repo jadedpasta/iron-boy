@@ -91,7 +91,7 @@ mod tests {
 
     impl<F> TimerBus for InterruptModerator<F>
     where
-        F: FnMut() -> (),
+        F: FnMut(),
     {
         fn request_timer_interrupt(&mut self) {
             (self.func)();
