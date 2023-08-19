@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use super::{Mbc, mem::Mem};
+use super::{mem::Mem, Mbc};
 
 #[derive(Default)]
 pub struct Mbc1 {
@@ -13,11 +13,7 @@ pub struct Mbc1 {
 
 impl Mbc1 {
     fn rom_bank_offset(&self) -> usize {
-        let bank_num = if self.rom_bank == 0 {
-            1
-        } else {
-            self.rom_bank
-        };
+        let bank_num = if self.rom_bank == 0 { 1 } else { self.rom_bank };
         (bank_num as usize) << 14
     }
 

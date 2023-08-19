@@ -9,13 +9,14 @@ mod timer;
 use partial_borrow::{prelude::*, SplitOff};
 
 use crate::{
+    cart::Cart,
     cpu::{Cpu, CpuBus},
     dma::{Dma, DmaBus},
     interrupt::InterruptState,
     joypad::{Button, ButtonState, Joypad},
     memory::MemoryData,
     ppu::{Ppu, PpuBus},
-    timer::{Timer, TimerBus}, cart::Cart,
+    timer::{Timer, TimerBus},
 };
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../../sameboy_boot.bin");
@@ -32,7 +33,7 @@ pub struct CgbSystem {
     boot_rom_mapped: bool,
     cgb_mode: bool,
     key0: u8, // TODO: This can probably be combined with cgb_mode
-    cart: Cart
+    cart: Cart,
 }
 
 impl CgbSystem {

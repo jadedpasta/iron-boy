@@ -38,11 +38,7 @@ pub struct OptionalSegment(Option<Segment>);
 
 impl OptionalSegment {
     pub fn new(len: usize) -> Self {
-        Self(if len == 0 {
-            None
-        } else {
-            Some(Segment::new(len))
-        })
+        Self(if len == 0 { None } else { Some(Segment::new(len)) })
     }
 
     pub fn len(&self) -> usize {
@@ -72,11 +68,7 @@ impl TryFrom<Box<[u8]>> for OptionalSegment {
     type Error = (); // TODO: better error
 
     fn try_from(buf: Box<[u8]>) -> Result<Self, Self::Error> {
-        Ok(Self(if buf.len() == 0 {
-            None
-        } else {
-            Some(buf.try_into()?)
-        }))
+        Ok(Self(if buf.len() == 0 { None } else { Some(buf.try_into()?) }))
     }
 }
 

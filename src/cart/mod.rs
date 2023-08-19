@@ -3,11 +3,15 @@
 
 use ambassador::{delegatable_trait, Delegate};
 
-use self::{mbc1::Mbc1, simple::Simple, mem::{Mem, Segment, OptionalSegment}};
+use self::{
+    mbc1::Mbc1,
+    mem::{Mem, OptionalSegment, Segment},
+    simple::Simple,
+};
 
+mod mbc1;
 mod mem;
 mod simple;
-mod mbc1;
 
 #[delegatable_trait]
 pub trait Mbc {
@@ -41,8 +45,7 @@ fn header(rom: &[u8]) -> (u8, usize, usize) {
     (cart_type, rom_size, ram_size)
 }
 
-
-pub struct Cart<M=AnyMbc> {
+pub struct Cart<M = AnyMbc> {
     mem: Mem,
     mbc: M,
 }
@@ -67,7 +70,6 @@ impl<M: Mbc> Cart<M> {
 
 impl Cart {
     pub fn from_rom(mut rom: Box<[u8]>) -> Self {
-
         let (cart_type, rom_size, ram_size) = header(&rom[..]);
 
         assert!(rom_size >= rom.len(), "ROM is too big");
@@ -79,16 +81,12 @@ impl Cart {
         let rom = Segment::try_from(rom).unwrap();
         let ram = OptionalSegment::new(ram_size);
 
-
         let mbc = match cart_type {
             0x00 | 0x08 | 0x09 => AnyMbc::Simple(Default::default()),
             0x01 | 0x02 | 0x03 => AnyMbc::Mbc1(Default::default()),
             _ => panic!("Unknown cartrige type: {cart_type:x}"),
         };
 
-        Self {
-            mem: Mem { rom, ram },
-            mbc,
-        }
+        Self { mem: Mem { rom, ram }, mbc }
     }
 }
