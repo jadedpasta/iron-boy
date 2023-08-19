@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
+mod cart;
 mod cpu;
 mod dma;
 mod interrupt;
@@ -10,6 +11,7 @@ mod reg;
 mod system;
 mod timer;
 
+use cart::Cart;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
@@ -38,7 +40,8 @@ impl Cgb {
 
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
-        Self { system: CgbSystem::new(rom) }
+        let cart = Cart::from_rom(rom.into_boxed_slice());
+        Self { system: CgbSystem::new(cart) }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {

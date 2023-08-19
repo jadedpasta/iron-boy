@@ -15,7 +15,7 @@ use crate::{
     joypad::{Button, ButtonState, Joypad},
     memory::MemoryData,
     ppu::{Ppu, PpuBus},
-    timer::{Timer, TimerBus},
+    timer::{Timer, TimerBus}, cart::Cart,
 };
 
 const BOOT_ROM: &'static [u8] = include_bytes!("../../sameboy_boot.bin");
@@ -32,21 +32,23 @@ pub struct CgbSystem {
     boot_rom_mapped: bool,
     cgb_mode: bool,
     key0: u8, // TODO: This can probably be combined with cgb_mode
+    cart: Cart
 }
 
 impl CgbSystem {
-    pub fn new(rom: impl Into<Vec<u8>>) -> Box<Self> {
+    pub fn new(cart: Cart) -> Box<Self> {
         Box::new(CgbSystem {
             cpu: Cpu::default(),
             timer: Timer::new(),
             dma: Dma::new(),
             ppu: Ppu::new(),
-            mem: MemoryData::new(rom),
+            mem: MemoryData::new(),
             joypad: Joypad::new(),
             interrupt: InterruptState::new(),
             boot_rom_mapped: true,
             cgb_mode: true,
             key0: 0,
+            cart,
         })
     }
 

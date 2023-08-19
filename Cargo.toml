@@ -5,6 +5,7 @@ edition = "2021"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+ambassador = { version = "0.3.5", default-features = false }
 bilge = "0.2.0"
 partial-borrow = "1.0.1"
 pixels = "0.12.0"

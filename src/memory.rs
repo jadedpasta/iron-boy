@@ -94,9 +94,7 @@ impl PaletteRam {
 pub type OamBytes = [u8; 0xa0];
 
 pub struct MemoryData {
-    pub cartrige_rom: [u8; 0x8000], // TODO: MBCs
     pub vram: VideoRam,
-    pub cartrige_ram: [u8; 0x2000], // TODO: MBCs
     pub wram: WorkRam,
     // echo_ram: mirror of 0xc000~0xddff
     pub oam: OamBytes,
@@ -107,14 +105,8 @@ pub struct MemoryData {
 }
 
 impl MemoryData {
-    pub fn new(rom: impl Into<Vec<u8>>) -> Self {
+    pub fn new() -> Self {
         // SAFTEY: All zeros is valid for MemoryData, which is just a bunch of nested arrays of u8
-        let mut mem = unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() };
-
-        let mut rom = rom.into();
-        rom.resize(mem::size_of_val(&mem.cartrige_rom), 0);
-        mem.cartrige_rom.copy_from_slice(&rom[..]);
-
-        mem
+        unsafe { MaybeUninit::<MemoryData>::zeroed().assume_init() }
     }
 }

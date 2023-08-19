@@ -12,9 +12,9 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
     fn read_8(&self, addr: u16) -> u8 {
         match (addr >> 8) as u8 {
             0x00..=0x00 | 0x02..=0x08 if *self.boot_rom_mapped => BOOT_ROM[addr as usize],
-            0x00..=0x7f => self.mem.cartrige_rom[addr as usize],
+            0x00..=0x7f => self.cart.read_low(addr),
             0x80..=0x9f => self.mem.vram.read(addr, *self.cgb_mode),
-            0xa0..=0xbf => self.mem.cartrige_ram[addr as usize & 0x1fff],
+            0xa0..=0xbf => self.cart.read_high(addr),
             0xc0..=0xcf | 0xe0..=0xef => self.mem.wram.read_low(addr),
             0xd0..=0xdf | 0xf0..=0xfd => self.mem.wram.read_high(addr, *self.cgb_mode),
             0xfe => match addr as u8 {
@@ -62,9 +62,9 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
 
     fn write_8(&mut self, addr: u16, val: u8) {
         match (addr >> 8) as u8 {
-            0x00..=0x7f => (), // Ignore writes to cartridge ROM (TODO: MBCs)
+            0x00..=0x7f => self.cart.write_low(addr, val),
             0x80..=0x9f => self.mem.vram.write(addr, val, *self.cgb_mode),
-            0xa0..=0xbf => self.mem.cartrige_ram[addr as usize & 0x1fff] = val,
+            0xa0..=0xbf => self.cart.write_high(addr, val),
             0xc0..=0xcf | 0xe0..=0xef => self.mem.wram.write_low(addr, val),
             0xd0..=0xdf | 0xf0..=0xfd => self.mem.wram.write_high(addr, val, *self.cgb_mode),
             0xfe => match addr as u8 {
