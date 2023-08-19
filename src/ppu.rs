@@ -114,7 +114,10 @@ pub struct Ppu {
     pub obp1: u8,
     pub scx: u8,
     pub scy: u8,
+    pub wx: u8,
+    pub wy: u8,
     stat: Stat,
+    below_window: bool,
     interrupt_line: bool,
 }
 
@@ -143,17 +146,31 @@ impl Ppu {
             obp1: 0,
             scx: 0,
             scy: 0,
+            wx: 0,
+            wy: 0,
             stat,
+            below_window: false,
             interrupt_line: false,
         }
     }
 
-    fn fetch_bg_pixel(&self, lx: u8, pixel_y: u8, tile_y: u8, bus: &impl PpuBus) -> BgPixel {
+    fn fetch_bg_pixel(&self, lx: u8, bus: &impl PpuBus) -> BgPixel {
         let vram = bus.vram();
 
-        let pixel_x = lx.wrapping_add(self.scx);
+        let window_x = lx + 7;
+        let render_window = self.lcdc.window_enabled() && self.below_window && window_x >= self.wx;
+
+        let pixel_y =
+            if render_window { self.ly - self.wy } else { self.ly.wrapping_add(self.scy) };
+
+        let tile_y = pixel_y / 8;
+
+        let pixel_x = if render_window { window_x - self.wx } else { lx.wrapping_add(self.scx) };
+
         // Compute the tilemap address
-        let map_area_bit = self.lcdc.bg_map_bit().value() as usize;
+        let map_area_bit =
+            if render_window { self.lcdc.window_map_bit() } else { self.lcdc.bg_map_bit() }.value()
+                as usize;
         let tile_x = pixel_x / 8;
         let vram_addr = 0x1800 | (map_area_bit << 10) | ((tile_y as usize) << 5) | tile_x as usize;
         // Grab the tile ID and attributes from the tile map
@@ -320,12 +337,10 @@ impl Ppu {
             selected_objs.sort_by_key(|i| objs[*i].x);
         }
 
-        let pixel_y = self.ly.wrapping_add(self.scy);
-        let tile_y = pixel_y / 8;
         for lx in 0..Cgb::SCREEN_WIDTH as u8 {
             let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, bus);
 
-            let bg_pixel = self.fetch_bg_pixel(lx, pixel_y, tile_y, bus);
+            let bg_pixel = self.fetch_bg_pixel(lx, bus);
 
             let color = self.mix_pixels(bg_pixel, obj_pixel, bus);
 
@@ -373,23 +388,18 @@ impl Ppu {
         if !self.lcdc.lcd_enabled() {
             self.ly = 0;
             self.switch_mode(Mode::OamSearch);
+            self.below_window = false;
             self.interrupt_line = false;
         }
     }
 
-    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
-        if !self.lcd_enabled() {
-            return;
+    fn start_of_mode(&mut self) {
+        if let Mode::OamSearch = self.stat.mode() {
+            self.below_window |= self.ly == self.wy;
         }
+    }
 
-        if self.mode_cycles_remaining > 1 {
-            // There are still cycles left for the current mode. Wait to do anything until the last
-            // cycle.
-            self.mode_cycles_remaining -= 1;
-            return;
-        }
-        self.mode_cycles_remaining = 0;
-
+    fn end_of_mode(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
         match self.stat.mode() {
             Mode::OamSearch => self.switch_mode(Mode::Transfer),
             Mode::Transfer => {
@@ -409,13 +419,16 @@ impl Ppu {
                 self.ly += 1;
                 if self.ly == Cgb::FRAME_LINES as u8 {
                     self.ly = 0;
+                    self.below_window = false;
                     self.switch_mode(Mode::OamSearch);
                 } else {
                     self.mode_cycles_remaining = Mode::VBlank.cycles();
                 }
             }
         }
+    }
 
+    fn compute_interrupts(&mut self, bus: &mut impl PpuBus) {
         let lyc_equal = self.ly == self.lyc;
         self.stat.set_lyc_equal(lyc_equal);
 
@@ -435,6 +448,26 @@ impl Ppu {
             bus.request_stat_interrupt();
         }
         self.interrupt_line = interrupt_line;
+    }
+
+    pub fn execute(&mut self, frame_buff: &mut FrameBuffer, bus: &mut impl PpuBus) {
+        if !self.lcd_enabled() {
+            return;
+        }
+
+        if self.stat.mode().cycles() == self.mode_cycles_remaining {
+            self.start_of_mode();
+        }
+
+        if self.mode_cycles_remaining > 1 {
+            // There are still cycles left for the current mode. Wait until the last cycle.
+            self.mode_cycles_remaining -= 1;
+            return;
+        }
+        self.mode_cycles_remaining = 0;
+
+        self.end_of_mode(frame_buff, bus);
+        self.compute_interrupts(bus);
     }
 }
 

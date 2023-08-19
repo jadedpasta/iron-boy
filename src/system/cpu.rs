@@ -54,6 +54,8 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
                 reg::OBP1 => self.ppu.obp1,
                 reg::SCX => self.ppu.scx,
                 reg::SCY => self.ppu.scy,
+                reg::WX => self.ppu.wx,
+                reg::WY => self.ppu.wy,
                 reg::STAT => self.ppu.stat(),
                 _ => 0, // unimplemented
             },
@@ -104,6 +106,8 @@ impl CpuBus for partial!(CgbSystem ! cpu, mut *) {
                 reg::OBP1 => self.ppu.obp1 = val,
                 reg::SCX => self.ppu.scx = val,
                 reg::SCY => self.ppu.scy = val,
+                reg::WX => self.ppu.wx = val,
+                reg::WY => self.ppu.wy = val,
                 reg::STAT => self.ppu.set_stat(val),
                 _ => (), // unimplemented
             },
