@@ -55,7 +55,8 @@ pub struct Joypad {
 
 impl Joypad {
     pub fn new() -> Self {
-        Self { state: 0, p1: 0 }
+        // Upper 2 bits of P1 are locked on
+        Self { state: 0, p1: 0xc0 }
     }
 
     pub fn handle(&mut self, button: Button, state: ButtonState, bus: &mut impl JoypadBus) {
@@ -74,7 +75,7 @@ impl Joypad {
     }
 
     fn action_bits(&self) -> u8 {
-        (self.state >> 4) & 0x0f
+        self.state >> 4
     }
 
     pub fn p1(&self) -> u8 {
@@ -90,7 +91,7 @@ impl Joypad {
     }
 
     pub fn set_p1(&mut self, p1: u8) {
-        self.p1 &= 0x0f;
-        self.p1 |= p1 & 0xf0;
+        self.p1 &= !0x30;
+        self.p1 |= p1 & 0x30;
     }
 }
