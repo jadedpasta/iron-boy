@@ -5,11 +5,13 @@ use ambassador::{delegatable_trait, Delegate};
 
 use self::{
     mbc1::Mbc1,
+    mbc2::Mbc2,
     mem::{Mem, OptionalSegment, Segment},
     simple::Simple,
 };
 
 mod mbc1;
+mod mbc2;
 mod mem;
 mod simple;
 
@@ -26,6 +28,7 @@ pub trait Mbc {
 pub enum AnyMbc {
     Simple(Simple),
     Mbc1(Mbc1),
+    Mbc2(Mbc2),
 }
 
 fn header(rom: &[u8]) -> (u8, usize, usize) {
@@ -70,7 +73,17 @@ impl<M: Mbc> Cart<M> {
 
 impl Cart {
     pub fn from_rom(mut rom: Box<[u8]>) -> Self {
-        let (cart_type, rom_size, ram_size) = header(&rom[..]);
+        let (cart_type, rom_size, mut ram_size) = header(&rom[..]);
+
+        let mbc = match cart_type {
+            0x00 | 0x08 | 0x09 => AnyMbc::Simple(Default::default()),
+            0x01 | 0x02 | 0x03 => AnyMbc::Mbc1(Default::default()),
+            0x05 | 0x06 => {
+                ram_size = 512;
+                AnyMbc::Mbc2(Default::default())
+            }
+            _ => panic!("Unknown cartrige type: {cart_type:x}"),
+        };
 
         assert!(rom_size >= rom.len(), "ROM is too big");
         if rom_size > rom.len() {
@@ -79,13 +92,8 @@ impl Cart {
             rom = vec.into_boxed_slice();
         }
         let rom = Segment::try_from(rom).unwrap();
-        let ram = OptionalSegment::new(ram_size);
 
-        let mbc = match cart_type {
-            0x00 | 0x08 | 0x09 => AnyMbc::Simple(Default::default()),
-            0x01 | 0x02 | 0x03 => AnyMbc::Mbc1(Default::default()),
-            _ => panic!("Unknown cartrige type: {cart_type:x}"),
-        };
+        let ram = OptionalSegment::new(ram_size);
 
         Self { mem: Mem { rom, ram }, mbc }
     }
