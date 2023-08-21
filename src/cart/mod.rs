@@ -6,13 +6,16 @@ use ambassador::{delegatable_trait, Delegate};
 use self::{
     mbc1::Mbc1,
     mbc2::Mbc2,
+    mbc3::Mbc3,
     mem::{Mem, OptionalSegment, Segment},
     simple::Simple,
 };
 
 mod mbc1;
 mod mbc2;
+mod mbc3;
 mod mem;
+mod rtc;
 mod simple;
 
 #[delegatable_trait]
@@ -29,6 +32,7 @@ pub enum AnyMbc {
     Simple(Simple),
     Mbc1(Mbc1),
     Mbc2(Mbc2),
+    Mbc3(Mbc3),
 }
 
 fn header(rom: &[u8]) -> (u8, usize, usize) {
@@ -82,6 +86,8 @@ impl Cart {
                 ram_size = 512;
                 AnyMbc::Mbc2(Default::default())
             }
+            0x0f | 0x10 => AnyMbc::Mbc3(Mbc3::new_with_rtc()),
+            0x11 | 0x12 | 0x13 => AnyMbc::Mbc3(Default::default()),
             _ => panic!("Unknown cartrige type: {cart_type:x}"),
         };
 
