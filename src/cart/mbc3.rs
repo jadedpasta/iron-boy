@@ -13,7 +13,10 @@ pub struct Mbc3 {
 
 impl Mbc3 {
     pub fn new_with_rtc() -> Self {
-        Self { rtc: Some(Default::default()), ..Default::default() }
+        Self {
+            rtc: Some(Default::default()),
+            ..Default::default()
+        }
     }
     fn rom_bank_offset(&self) -> usize {
         let bank_num = if self.rom_bank == 0 { 1 } else { self.rom_bank };
@@ -60,8 +63,14 @@ impl Mbc for Mbc3 {
 
     fn read_high(&self, addr: u16, mem: &Mem) -> u8 {
         match self {
-            Self { ram_enabled: false, .. } => 0xff,
-            Self { rtc: Some(rtc), ram_bank: rtc_reg @ 0x08..=0x0c, .. } => match rtc_reg {
+            Self {
+                ram_enabled: false, ..
+            } => 0xff,
+            Self {
+                rtc: Some(rtc),
+                ram_bank: rtc_reg @ 0x08..=0x0c,
+                ..
+            } => match rtc_reg {
                 0x08 => rtc.seconds() as u8,
                 0x09 => rtc.minutes() as u8,
                 0x0a => rtc.hours() as u8,
@@ -75,8 +84,14 @@ impl Mbc for Mbc3 {
 
     fn write_high(&mut self, addr: u16, val: u8, mem: &mut Mem) {
         match self {
-            Self { ram_enabled: false, .. } => (),
-            Self { rtc: Some(rtc), ram_bank: rtc_reg @ 0x08..=0x0c, .. } => match rtc_reg {
+            Self {
+                ram_enabled: false, ..
+            } => (),
+            Self {
+                rtc: Some(rtc),
+                ram_bank: rtc_reg @ 0x08..=0x0c,
+                ..
+            } => match rtc_reg {
                 0x08 => rtc.set_seconds(val),
                 0x09 => rtc.set_minutes(val),
                 0x0a => rtc.set_hours(val),

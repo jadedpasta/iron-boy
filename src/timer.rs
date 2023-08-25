@@ -17,7 +17,12 @@ const ENABLE: u8 = 0x4;
 
 impl Timer {
     pub fn new() -> Self {
-        Timer { counter: Wrapping(0), tima: Wrapping(0), tma: 0, tac: 0 }
+        Timer {
+            counter: Wrapping(0),
+            tima: Wrapping(0),
+            tma: 0,
+            tac: 0,
+        }
     }
 
     pub fn execute(&mut self, bus: &mut impl TimerBus) {
@@ -112,7 +117,10 @@ mod tests {
                 func: || {
                     requests += 1;
                     // Falling edge, so we increment at the end of the cycle
-                    assert!((i + 1) % period == 0, "Requested interrupt when not expected");
+                    assert!(
+                        (i + 1) % period == 0,
+                        "Requested interrupt when not expected"
+                    );
                 },
             };
             timer.execute(&mut bus);

@@ -17,7 +17,10 @@ pub struct InterruptState {
 
 impl InterruptState {
     pub fn new() -> Self {
-        Self { enable: 0, flags: 0 }
+        Self {
+            enable: 0,
+            flags: 0,
+        }
     }
 
     pub fn request(&mut self, interrupt: Interrupt) {

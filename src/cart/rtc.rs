@@ -18,7 +18,10 @@ struct Counter {
 
 impl Default for Counter {
     fn default() -> Self {
-        Self { base: Instant::now(), halted: None }
+        Self {
+            base: Instant::now(),
+            halted: None,
+        }
     }
 }
 
@@ -89,7 +92,12 @@ impl Rtc {
     }
 
     pub fn flags(&self) -> RtcFlags {
-        RtcFlags::new(self.days() & 0x100 != 0, u5::new(0), self.counter.halted(), self.day_carry)
+        RtcFlags::new(
+            self.days() & 0x100 != 0,
+            u5::new(0),
+            self.counter.halted(),
+            self.day_carry,
+        )
     }
 
     fn set<const SECS_PER_UNIT: u64, const MAX_UNIT: u64>(&mut self, units: u8) {
@@ -130,7 +138,8 @@ impl Rtc {
         let current_days = current.as_secs() / SECONDS_PER_DAY;
         let current_days_msb = ((current_days >> 8) & 0x1) as u32;
         let days256 = Duration::from_secs(SECONDS_PER_DAY * 256);
-        self.counter.set(current + days256 * ((flags.day_msb() as u32) - current_days_msb))
+        self.counter
+            .set(current + days256 * ((flags.day_msb() as u32) - current_days_msb))
     }
 
     pub fn latch(&mut self, high: bool) {

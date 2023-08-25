@@ -32,7 +32,15 @@ pub struct Dma {
 
 impl Dma {
     pub fn new() -> Self {
-        Self { state: None, cpu_paused: false, dma: 0, hdma1: 0, hdma2: 0, hdma3: 0, hdma4: 0 }
+        Self {
+            state: None,
+            cpu_paused: false,
+            dma: 0,
+            hdma1: 0,
+            hdma2: 0,
+            hdma3: 0,
+            hdma4: 0,
+        }
     }
 
     pub fn cpu_paused(&self) -> bool {
@@ -41,7 +49,12 @@ impl Dma {
 
     fn start_general(&mut self, len: u16) {
         // TODO: Do some kind of cancel of an ongoing OAM DMA for simplicity
-        self.state = Some(DmaState { ty: DmaType::General, len, count: 0, oam_src: 0 });
+        self.state = Some(DmaState {
+            ty: DmaType::General,
+            len,
+            count: 0,
+            oam_src: 0,
+        });
     }
 
     pub fn hdma5(&self) -> u8 {
@@ -59,7 +72,12 @@ impl Dma {
 
     fn start_oam(&mut self, oam_src: u16) {
         // TODO: Do some kind of cancel of an ongoing HDMA for simplicity
-        self.state = Some(DmaState { ty: DmaType::Oam, len: 0xa0, count: 0, oam_src });
+        self.state = Some(DmaState {
+            ty: DmaType::Oam,
+            len: 0xa0,
+            count: 0,
+            oam_src,
+        });
     }
 
     pub fn dma(&self) -> u8 {

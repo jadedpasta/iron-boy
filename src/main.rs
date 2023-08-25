@@ -44,7 +44,9 @@ impl Cgb {
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
         let cart = Cart::from_rom(rom.into_boxed_slice());
-        Self { system: CgbSystem::new(cart) }
+        Self {
+            system: CgbSystem::new(cart),
+        }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
@@ -103,17 +105,25 @@ fn main() {
     let mut pixels = {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        PixelsBuilder::new(Cgb::SCREEN_WIDTH as u32, Cgb::SCREEN_HEIGHT as u32, surface_texture)
-            .texture_format(TextureFormat::Rgba8Unorm)
-            .surface_texture_format(TextureFormat::Bgra8Unorm)
-            .present_mode(PresentMode::Fifo)
-            .build()
-            .unwrap()
+        PixelsBuilder::new(
+            Cgb::SCREEN_WIDTH as u32,
+            Cgb::SCREEN_HEIGHT as u32,
+            surface_texture,
+        )
+        .texture_format(TextureFormat::Rgba8Unorm)
+        .surface_texture_format(TextureFormat::Bgra8Unorm)
+        .present_mode(PresentMode::Fifo)
+        .build()
+        .unwrap()
     };
 
     event_loop.run(move |event, _, control_flow| {
         let now = Instant::now();
-        let last = if let ControlFlow::WaitUntil(instant) = *control_flow { instant } else { now };
+        let last = if let ControlFlow::WaitUntil(instant) = *control_flow {
+            instant
+        } else {
+            now
+        };
 
         match event {
             Event::MainEventsCleared => {
@@ -135,7 +145,12 @@ fn main() {
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::KeyboardInput {
-                    input: KeyboardInput { virtual_keycode: Some(virtual_keycode), state, .. },
+                    input:
+                        KeyboardInput {
+                            virtual_keycode: Some(virtual_keycode),
+                            state,
+                            ..
+                        },
                     ..
                 } => match (virtual_keycode, state) {
                     (VirtualKeyCode::Escape, ElementState::Released) => {

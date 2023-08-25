@@ -101,6 +101,9 @@ impl Cart {
 
         let ram = OptionalSegment::new(ram_size);
 
-        Self { mem: Mem { rom, ram }, mbc }
+        Self {
+            mem: Mem { rom, ram },
+            mbc,
+        }
     }
 }

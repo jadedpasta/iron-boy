@@ -160,17 +160,27 @@ impl Ppu {
         let window_x = lx + 7;
         let render_window = self.lcdc.window_enabled() && self.below_window && window_x >= self.wx;
 
-        let pixel_y =
-            if render_window { self.ly - self.wy } else { self.ly.wrapping_add(self.scy) };
+        let pixel_y = if render_window {
+            self.ly - self.wy
+        } else {
+            self.ly.wrapping_add(self.scy)
+        };
 
         let tile_y = pixel_y / 8;
 
-        let pixel_x = if render_window { window_x - self.wx } else { lx.wrapping_add(self.scx) };
+        let pixel_x = if render_window {
+            window_x - self.wx
+        } else {
+            lx.wrapping_add(self.scx)
+        };
 
         // Compute the tilemap address
-        let map_area_bit =
-            if render_window { self.lcdc.window_map_bit() } else { self.lcdc.bg_map_bit() }.value()
-                as usize;
+        let map_area_bit = if render_window {
+            self.lcdc.window_map_bit()
+        } else {
+            self.lcdc.bg_map_bit()
+        }
+        .value() as usize;
         let tile_x = pixel_x / 8;
         let vram_addr = 0x1800 | (map_area_bit << 10) | ((tile_y as usize) << 5) | tile_x as usize;
         // Grab the tile ID and attributes from the tile map
@@ -195,7 +205,11 @@ impl Ppu {
         let color = (color_high << 1) | color_low;
 
         let palette = if bus.cgb_mode() { attributes & 0x7 } else { 0 };
-        BgPixel { color, palette, bg_over_obj: attributes & 0x80 != 0 }
+        BgPixel {
+            color,
+            palette,
+            bg_over_obj: attributes & 0x80 != 0,
+        }
     }
 
     fn fetch_obj_pixel(
@@ -246,7 +260,11 @@ impl Ppu {
             }
 
             let vram_addr = ((tile_id as usize) << 4) | ((y_offset as usize) << 1);
-            let bank = if bus.cgb_mode() { obj.attrs.bank().value() as usize } else { 0 };
+            let bank = if bus.cgb_mode() {
+                obj.attrs.bank().value() as usize
+            } else {
+                0
+            };
             let vram_bank = &vram[bank];
             let color_low = vram_bank[vram_addr];
             let color_high = vram_bank[vram_addr + 1];
@@ -294,7 +312,11 @@ impl Ppu {
                 let (color, palette) = if bus.cgb_mode() {
                     (obj_pixel.color, obj_pixel.palette)
                 } else {
-                    let obp = if obj_pixel.palette == 0 { self.obp0 } else { self.obp1 };
+                    let obp = if obj_pixel.palette == 0 {
+                        self.obp0
+                    } else {
+                        self.obp1
+                    };
                     ((obp >> (obj_pixel.color * 2)) & 0x3, obj_pixel.palette)
                 };
 
@@ -308,8 +330,11 @@ impl Ppu {
             return 0x7fff;
         }
 
-        let color =
-            if bus.cgb_mode() { bg_pixel.color } else { (self.bgp >> (bg_pixel.color * 2)) & 0x3 };
+        let color = if bus.cgb_mode() {
+            bg_pixel.color
+        } else {
+            (self.bgp >> (bg_pixel.color * 2)) & 0x3
+        };
 
         let palette = bg_palettes[bg_pixel.palette as usize];
         u16::from_le_bytes(palette[color as usize])
@@ -534,18 +559,27 @@ mod tests {
         fn new(vram_init: impl FnOnce(&mut VRamBytes)) -> Self {
             let mut bus = Bus::new();
             vram_init(&mut bus.vram);
-            let palette: Vec<[u8; 2]> =
-                [0xffff, 0x1f << 10, 0x1f << 5, 0x1f].into_iter().map(u16::to_le_bytes).collect();
+            let palette: Vec<[u8; 2]> = [0xffff, 0x1f << 10, 0x1f << 5, 0x1f]
+                .into_iter()
+                .map(u16::to_le_bytes)
+                .collect();
             bus.bg_palette_ram[0].copy_from_slice(&palette);
             let mut ppu = Ppu::new();
             ppu.lcdc.set_lcd_enabled(true);
             ppu.lcdc.set_tile_data_bit(true.into());
-            Self { ppu, bus, frame_buff: unsafe { MaybeUninit::zeroed().assume_init() } }
+            Self {
+                ppu,
+                bus,
+                frame_buff: unsafe { MaybeUninit::zeroed().assume_init() },
+            }
         }
 
         fn draw_frame(&mut self) {
             let mode = self.ppu.stat.mode();
-            assert!(mode as u8 == Mode::OamSearch as u8, "Started frame in {mode:?}");
+            assert!(
+                mode as u8 == Mode::OamSearch as u8,
+                "Started frame in {mode:?}"
+            );
             for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
                 self.ppu.execute(&mut self.frame_buff, &mut *self.bus);
             }
