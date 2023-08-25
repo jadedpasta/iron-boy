@@ -16,7 +16,7 @@ mod timer;
 
 use cart::Cart;
 use joypad::{Button, ButtonState};
-use pixels::wgpu::TextureFormat;
+use pixels::wgpu::{PresentMode, TextureFormat};
 use pixels::{PixelsBuilder, SurfaceTexture};
 use std::time::{Duration, Instant};
 use std::{env, fs, mem};
@@ -106,6 +106,7 @@ fn main() {
         PixelsBuilder::new(Cgb::SCREEN_WIDTH as u32, Cgb::SCREEN_HEIGHT as u32, surface_texture)
             .texture_format(TextureFormat::Rgba8Unorm)
             .surface_texture_format(TextureFormat::Bgra8Unorm)
+            .present_mode(PresentMode::Fifo)
             .build()
             .unwrap()
     };
