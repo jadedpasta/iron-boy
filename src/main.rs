@@ -25,22 +25,13 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-use system::CgbSystem;
+use system::{CgbSystem, FrameBuffer};
 
 struct Cgb {
     system: Box<CgbSystem>,
 }
-type FrameBuffer = [[[u8; 4]; Cgb::SCREEN_WIDTH]; Cgb::SCREEN_HEIGHT];
 
 impl Cgb {
-    const FRAME_TIME: Duration = Duration::from_nanos(16742706);
-    const SCREEN_WIDTH: usize = 160;
-    const SCREEN_HEIGHT: usize = 144;
-    const VBLANK_LINES: usize = 10;
-    const FRAME_LINES: usize = Self::SCREEN_HEIGHT + Self::VBLANK_LINES;
-    const DOTS_PER_LINE: usize = 456;
-    const DOTS_PER_FRAME: usize = Self::FRAME_LINES * Self::DOTS_PER_LINE;
-
     fn new(rom_file_name: impl AsRef<str>) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
         let cart = Cart::from_rom(rom.into_boxed_slice());
@@ -49,29 +40,12 @@ impl Cgb {
         }
     }
 
-    fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) {
-        let lcd_on = self.system.lcd_on();
-        for _ in 0..Self::DOTS_PER_FRAME / 4 {
-            let (ppu, bus) = self.system.split_ppu();
-            ppu.execute(frame_buff, bus);
-            let (dma, bus) = self.system.split_dma();
-            dma.execute(bus);
-            let (cpu, bus) = self.system.split_cpu();
-            cpu.execute(bus);
-            let (timer, bus) = self.system.split_timer();
-            timer.execute(bus);
-            if !lcd_on && self.system.lcd_on() {
-                break;
-            }
-        }
-
-        if !lcd_on {
-            *frame_buff = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
-        }
+    fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) -> Duration {
+        self.system.execute(frame_buff).into()
     }
 
     fn into_frame_buffer_ref(buff: &mut [u8]) -> Option<&mut FrameBuffer> {
-        let buff: &mut [u8; 4 * Self::SCREEN_WIDTH * Self::SCREEN_HEIGHT] = buff.try_into().ok()?;
+        let buff: &mut [u8; mem::size_of::<FrameBuffer>()] = buff.try_into().ok()?;
         Some(unsafe { mem::transmute(buff) })
     }
 
@@ -93,7 +67,7 @@ fn main() {
 
     let event_loop = EventLoop::new();
 
-    let size = LogicalSize::new(Cgb::SCREEN_WIDTH as u16, Cgb::SCREEN_HEIGHT as u16);
+    let size = LogicalSize::new(system::SCREEN_WIDTH as u16, system::SCREEN_HEIGHT as u16);
 
     let window = WindowBuilder::new()
         .with_title("Iron Boy")
@@ -106,8 +80,8 @@ fn main() {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         PixelsBuilder::new(
-            Cgb::SCREEN_WIDTH as u32,
-            Cgb::SCREEN_HEIGHT as u32,
+            system::SCREEN_WIDTH as u32,
+            system::SCREEN_HEIGHT as u32,
             surface_texture,
         )
         .texture_format(TextureFormat::Rgba8Unorm)
@@ -131,10 +105,10 @@ fn main() {
                     // Not enough time has elapsed yet; nothing to do
                     return;
                 }
-                let frame_buffer = Cgb::into_frame_buffer_ref(pixels.frame_mut()).unwrap();
-                cgb.compute_next_frame(frame_buffer);
-                *control_flow = ControlFlow::WaitUntil(last + Cgb::FRAME_TIME);
                 window.request_redraw();
+                let frame_buffer = Cgb::into_frame_buffer_ref(pixels.frame_mut()).unwrap();
+                let wakeup = last + cgb.compute_next_frame(frame_buffer);
+                *control_flow = ControlFlow::WaitUntil(wakeup);
             }
             Event::RedrawRequested(window_id) if window_id == window.id() => {
                 pixels.render().unwrap();

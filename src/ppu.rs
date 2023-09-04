@@ -4,7 +4,7 @@ use bilge::prelude::*;
 
 use crate::{
     memory::{OamBytes, Palettes, VRamBytes},
-    Cgb, FrameBuffer,
+    system, FrameBuffer,
 };
 
 #[bitsize(2)]
@@ -362,7 +362,7 @@ impl Ppu {
             selected_objs.sort_by_key(|i| objs[*i].x);
         }
 
-        for lx in 0..Cgb::SCREEN_WIDTH as u8 {
+        for lx in 0..system::SCREEN_WIDTH as u8 {
             let obj_pixel = self.fetch_obj_pixel(lx, obj_target_y, &selected_objs, bus);
 
             let bg_pixel = self.fetch_bg_pixel(lx, bus);
@@ -433,7 +433,7 @@ impl Ppu {
             }
             Mode::HBlank => {
                 self.ly += 1;
-                self.switch_mode(if self.ly == Cgb::SCREEN_HEIGHT as u8 {
+                self.switch_mode(if self.ly == system::SCREEN_HEIGHT as u8 {
                     bus.request_vblank_interrupt();
                     Mode::VBlank
                 } else {
@@ -442,7 +442,7 @@ impl Ppu {
             }
             Mode::VBlank => {
                 self.ly += 1;
-                if self.ly == Cgb::FRAME_LINES as u8 {
+                if self.ly == system::FRAME_LINES as u8 {
                     self.ly = 0;
                     self.below_window = false;
                     self.switch_mode(Mode::OamSearch);
@@ -500,7 +500,7 @@ impl Ppu {
 mod tests {
     use std::{iter::repeat, mem::MaybeUninit};
 
-    use crate::memory::VRamBytes;
+    use crate::{memory::VRamBytes, system::MachineCycle};
 
     use super::*;
 
@@ -580,7 +580,7 @@ mod tests {
                 mode as u8 == Mode::OamSearch as u8,
                 "Started frame in {mode:?}"
             );
-            for _ in 0..Cgb::DOTS_PER_FRAME / 4 {
+            for _ in 0..MachineCycle::PER_FRAME {
                 self.ppu.execute(&mut self.frame_buff, &mut *self.bus);
             }
         }

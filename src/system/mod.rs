@@ -6,6 +6,8 @@ mod joypad;
 mod ppu;
 mod timer;
 
+use std::time::Duration;
+
 use partial_borrow::{prelude::*, SplitOff};
 
 use crate::{
@@ -20,6 +22,26 @@ use crate::{
 };
 
 const BOOT_ROM: &[u8] = include_bytes!("../../sameboy_boot.bin");
+
+pub const SCREEN_WIDTH: usize = 160;
+pub const SCREEN_HEIGHT: usize = 144;
+pub const VBLANK_LINES: usize = 10;
+pub const FRAME_LINES: usize = SCREEN_HEIGHT + VBLANK_LINES;
+pub type FrameBuffer = [[[u8; 4]; SCREEN_WIDTH]; SCREEN_HEIGHT];
+
+pub struct MachineCycle(usize);
+
+impl MachineCycle {
+    pub const FREQ: usize = 1 << 20;
+    pub const PER_LINE: usize = 114;
+    pub const PER_FRAME: usize = FRAME_LINES * Self::PER_LINE;
+}
+
+impl From<MachineCycle> for Duration {
+    fn from(cycles: MachineCycle) -> Duration {
+        Self::from_secs_f64(cycles.0 as f64 / MachineCycle::FREQ as f64)
+    }
+}
 
 #[derive(PartialBorrow)]
 pub struct CgbSystem {
@@ -53,32 +75,58 @@ impl CgbSystem {
         })
     }
 
-    pub fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
+    fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.cpu, bus)
     }
 
-    pub fn split_ppu(&mut self) -> (&mut Ppu, &mut impl PpuBus) {
+    fn split_ppu(&mut self) -> (&mut Ppu, &mut impl PpuBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.ppu, bus)
     }
 
-    pub fn split_dma(&mut self) -> (&mut Dma, &mut impl DmaBus) {
+    fn split_dma(&mut self) -> (&mut Dma, &mut impl DmaBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.dma, bus)
     }
 
-    pub fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
+    fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.timer, bus)
-    }
-
-    pub fn lcd_on(&self) -> bool {
-        self.ppu.lcd_enabled()
     }
 
     pub fn handle_joypad(&mut self, button: Button, state: ButtonState) {
         let (bus, system) = SplitOff::split_off_mut(self);
         system.joypad.handle(button, state, bus);
+    }
+
+    fn execute_machine_cycle(&mut self, frame_buff: &mut FrameBuffer) {
+        let (ppu, bus) = self.split_ppu();
+        ppu.execute(frame_buff, bus);
+        let (dma, bus) = self.split_dma();
+        dma.execute(bus);
+        let (cpu, bus) = self.split_cpu();
+        cpu.execute(bus);
+        let (timer, bus) = self.split_timer();
+        timer.execute(bus);
+    }
+
+    pub fn execute(&mut self, frame_buff: &mut FrameBuffer) -> MachineCycle {
+        let lcd_on = self.ppu.lcd_enabled();
+        let mut cycles = MachineCycle::PER_FRAME;
+        for c in 1..=cycles {
+            self.execute_machine_cycle(frame_buff);
+            if !lcd_on && self.ppu.lcd_enabled() {
+                cycles = c;
+                break;
+            }
+        }
+
+        if !lcd_on {
+            // If the LCD is off, make sure we are showing a white screen
+            *frame_buff = [[[0xff; 4]; SCREEN_WIDTH]; SCREEN_HEIGHT];
+        }
+
+        MachineCycle(cycles)
     }
 }
