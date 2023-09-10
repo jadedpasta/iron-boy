@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
+mod apu;
 mod cpu;
 mod dma;
 mod joypad;
@@ -11,6 +12,7 @@ use std::time::Duration;
 use partial_borrow::{prelude::*, SplitOff};
 
 use crate::{
+    apu::{Apu, ApuBus},
     cart::Cart,
     cpu::{Cpu, CpuBus},
     dma::{Dma, DmaBus},
@@ -29,7 +31,8 @@ pub const VBLANK_LINES: usize = 10;
 pub const FRAME_LINES: usize = SCREEN_HEIGHT + VBLANK_LINES;
 pub type FrameBuffer = [[[u8; 4]; SCREEN_WIDTH]; SCREEN_HEIGHT];
 
-pub struct MachineCycle(usize);
+#[derive(Debug, Clone, Copy)]
+pub struct MachineCycle(pub usize);
 
 impl MachineCycle {
     pub const FREQ: usize = 1 << 20;
@@ -49,6 +52,7 @@ pub struct CgbSystem {
     timer: Timer,
     ppu: Ppu,
     dma: Dma,
+    apu: Apu,
     mem: MemoryData,
     joypad: Joypad,
     interrupt: InterruptState,
@@ -65,6 +69,7 @@ impl CgbSystem {
             timer: Timer::new(),
             dma: Dma::new(),
             ppu: Ppu::new(),
+            apu: Apu::default(),
             mem: MemoryData::new(),
             joypad: Joypad::new(),
             interrupt: InterruptState::new(),
@@ -90,6 +95,11 @@ impl CgbSystem {
         (&mut system.dma, bus)
     }
 
+    fn split_apu(&mut self) -> (&mut Apu, &mut impl ApuBus) {
+        let (bus, system) = SplitOff::split_off_mut(self);
+        (&mut system.apu, bus)
+    }
+
     fn split_timer(&mut self) -> (&mut Timer, &mut impl TimerBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.timer, bus)
@@ -100,22 +110,32 @@ impl CgbSystem {
         system.joypad.handle(button, state, bus);
     }
 
-    fn execute_machine_cycle(&mut self, frame_buff: &mut FrameBuffer) {
+    fn execute_machine_cycle(
+        &mut self,
+        frame_buff: &mut FrameBuffer,
+        audio_callback: &mut impl FnMut([f32; 2]),
+    ) {
         let (ppu, bus) = self.split_ppu();
         ppu.execute(frame_buff, bus);
         let (dma, bus) = self.split_dma();
         dma.execute(bus);
+        let (apu, bus) = self.split_apu();
+        apu.execute(bus).into_iter().for_each(audio_callback);
         let (cpu, bus) = self.split_cpu();
         cpu.execute(bus);
         let (timer, bus) = self.split_timer();
         timer.execute(bus);
     }
 
-    pub fn execute(&mut self, frame_buff: &mut FrameBuffer) -> MachineCycle {
+    pub fn execute(
+        &mut self,
+        frame_buff: &mut FrameBuffer,
+        mut audio_callback: impl FnMut([f32; 2]),
+    ) -> MachineCycle {
         let lcd_on = self.ppu.lcd_enabled();
         let mut cycles = MachineCycle::PER_FRAME;
         for c in 1..=cycles {
-            self.execute_machine_cycle(frame_buff);
+            self.execute_machine_cycle(frame_buff, &mut audio_callback);
             if !lcd_on && self.ppu.lcd_enabled() {
                 cycles = c;
                 break;

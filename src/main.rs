@@ -3,6 +3,8 @@
 
 #![allow(clippy::new_without_default)]
 
+mod apu;
+mod audio;
 mod cart;
 mod cpu;
 mod dma;
@@ -14,6 +16,7 @@ mod reg;
 mod system;
 mod timer;
 
+use audio::Audio;
 use cart::Cart;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::{PresentMode, TextureFormat};
@@ -29,19 +32,24 @@ use system::{CgbSystem, FrameBuffer};
 
 struct Cgb {
     system: Box<CgbSystem>,
+    audio: Audio,
 }
 
 impl Cgb {
-    fn new(rom_file_name: impl AsRef<str>) -> Self {
+    fn new(rom_file_name: impl AsRef<str>, audio: Audio) -> Self {
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
         let cart = Cart::from_rom(rom.into_boxed_slice());
         Self {
             system: CgbSystem::new(cart),
+            audio,
         }
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) -> Duration {
-        self.system.execute(frame_buff).into()
+        self.audio.update_ratio();
+        self.system
+            .execute(frame_buff, |f| self.audio.push_frame(f))
+            .into()
     }
 
     fn into_frame_buffer_ref(buff: &mut [u8]) -> Option<&mut FrameBuffer> {
@@ -63,7 +71,8 @@ fn handle_key(cgb: &mut Cgb, key: VirtualKeyCode, state: ElementState) {
 fn main() {
     let file_name = env::args().nth(1).unwrap();
 
-    let mut cgb = Cgb::new(file_name);
+    let audio = audio::init().unwrap();
+    let mut cgb = Cgb::new(file_name, audio);
 
     let event_loop = EventLoop::new();
 
