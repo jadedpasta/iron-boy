@@ -44,7 +44,7 @@ impl Envelope {
 #[derive(Default, FromBits, DebugBits, Clone, Copy)]
 struct Nr10 {
     sweep_slope: u3,
-    increase_sweep: bool,
+    decrease_sweep: bool,
     sweep_pace: u3,
     __: u1,
 }
@@ -139,15 +139,13 @@ impl Sweep for Sweeper {
             SweepAction::Nothing
         } else {
             let offset = period >> slope;
-            if self.nr10.increase_sweep() {
-                if period as u32 + offset as u32 > 0x1ff {
-                    // overflow
-                    SweepAction::Disable
-                } else {
-                    SweepAction::SetPeriod(period + offset)
-                }
-            } else {
+            if self.nr10.decrease_sweep() {
                 SweepAction::SetPeriod(period - offset)
+            } else if period as u32 + offset as u32 > 0x1ff {
+                // overflow
+                SweepAction::Disable
+            } else {
+                SweepAction::SetPeriod(period + offset)
             }
         }
     }
