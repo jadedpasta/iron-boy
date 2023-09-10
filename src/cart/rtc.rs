@@ -3,7 +3,7 @@
 
 use bilge::prelude::*;
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -12,14 +12,14 @@ const SECONDS_PER_HOUR: u64 = SECONDS_PER_MINUTE * MINUTES_PER_HOUR;
 const SECONDS_PER_DAY: u64 = SECONDS_PER_HOUR * HOURS_PER_DAY;
 
 struct Counter {
-    base: Instant,
-    halted: Option<Instant>,
+    base: SystemTime,
+    halted: Option<SystemTime>,
 }
 
 impl Default for Counter {
     fn default() -> Self {
         Self {
-            base: Instant::now(),
+            base: SystemTime::UNIX_EPOCH,
             halted: None,
         }
     }
@@ -28,13 +28,13 @@ impl Default for Counter {
 impl Counter {
     fn halt(&mut self) {
         if self.halted.is_none() {
-            self.halted = Some(Instant::now());
+            self.halted = Some(SystemTime::now());
         }
     }
 
     fn resume(&mut self) {
         if let Some(halted) = self.halted {
-            self.base += Instant::now() - halted;
+            self.base += halted.elapsed().unwrap_or_default();
             self.halted = None;
         }
     }
@@ -44,7 +44,7 @@ impl Counter {
     }
 
     fn set(&mut self, time: Duration) {
-        let now = Instant::now();
+        let now = SystemTime::now();
         self.base = now - time;
         if let Some(halted) = &mut self.halted {
             *halted = now;
@@ -52,8 +52,8 @@ impl Counter {
     }
 
     fn get(&self) -> Duration {
-        let end = self.halted.unwrap_or_else(Instant::now);
-        end - self.base
+        let end = self.halted.unwrap_or_else(SystemTime::now);
+        end.duration_since(self.base).unwrap_or_default()
     }
 }
 
