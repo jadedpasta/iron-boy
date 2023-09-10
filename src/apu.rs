@@ -30,10 +30,8 @@ impl Envelope {
                 if self.volume < 0xf {
                     self.volume += 1;
                 }
-            } else {
-                if self.volume > 0 {
-                    self.volume -= 1;
-                }
+            } else if self.volume > 0 {
+                self.volume -= 1;
             }
             self.countdown = self.sweep_pace;
         }
@@ -587,7 +585,7 @@ impl Apu {
     }
 
     pub fn nr13(&self) -> u8 {
-        self.ch1.nrx3.into()
+        self.ch1.nrx3
     }
 
     pub fn set_nr13(&mut self, nr13: u8) {
@@ -623,7 +621,7 @@ impl Apu {
     }
 
     pub fn nr23(&self) -> u8 {
-        self.ch2.nrx3.into()
+        self.ch2.nrx3
     }
 
     pub fn set_nr23(&mut self, nr23: u8) {

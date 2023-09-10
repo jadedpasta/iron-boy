@@ -150,7 +150,7 @@ pub fn init() -> Result<Audio, Box<dyn Error>> {
 
     let config = device
         .supported_output_configs()?
-        .filter(|r| {
+        .find(|r| {
             if let SupportedBufferSize::Range { min, max } = *r.buffer_size() {
                 r.channels() == CHANNELS
                     && r.sample_format() == sample_format
@@ -162,7 +162,6 @@ pub fn init() -> Result<Audio, Box<dyn Error>> {
                 false
             }
         })
-        .next()
         .ok_or("Could find acceptable audio configuration")?
         .with_sample_rate(sample_rate);
 
