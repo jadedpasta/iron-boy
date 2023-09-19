@@ -80,6 +80,10 @@ impl CgbSystem {
         })
     }
 
+    pub fn cart(&self) -> &Cart {
+        &self.cart
+    }
+
     fn split_cpu(&mut self) -> (&mut Cpu, &mut impl CpuBus) {
         let (bus, system) = SplitOff::split_off_mut(self);
         (&mut system.cpu, bus)

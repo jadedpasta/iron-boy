@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use super::{mem::Mem, rtc::Rtc, Mbc};
+use super::{mem::Mem, rtc::Rtc, save::MbcSave, Mbc};
 
 #[derive(Default)]
 pub struct Mbc3 {
@@ -18,6 +18,15 @@ impl Mbc3 {
             ..Default::default()
         }
     }
+
+    pub fn has_rtc(&self) -> bool {
+        self.rtc.is_some()
+    }
+
+    pub fn set_rtc(&mut self, rtc: Rtc) {
+        self.rtc = Some(rtc);
+    }
+
     fn rom_bank_offset(&self) -> usize {
         let bank_num = if self.rom_bank == 0 { 1 } else { self.rom_bank };
         (bank_num as usize) << 14
@@ -100,6 +109,14 @@ impl Mbc for Mbc3 {
                 _ => unreachable!(),
             },
             _ => mem.ram.write(self.ram_offset(addr), val),
+        }
+    }
+
+    fn save(&self) -> MbcSave {
+        if let Some(rtc) = &self.rtc {
+            MbcSave::Rtc(rtc.save())
+        } else {
+            MbcSave::None
         }
     }
 }

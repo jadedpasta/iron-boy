@@ -66,6 +66,10 @@ impl OptionalSegment {
             segment.write(addr, val);
         }
     }
+
+    pub fn raw(&self) -> Box<[u8]> {
+        self.0.as_ref().map(|s| s.0.clone()).unwrap_or_default()
+    }
 }
 
 impl TryFrom<Box<[u8]>> for OptionalSegment {

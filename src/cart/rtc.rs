@@ -5,6 +5,8 @@ use bilge::prelude::*;
 
 use std::time::{Duration, SystemTime};
 
+use super::save::RtcSave;
+
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
 const HOURS_PER_DAY: u64 = 24;
@@ -152,5 +154,28 @@ impl Rtc {
             }
         }
         self.latch_signal = high;
+    }
+
+    pub fn save(&self) -> RtcSave {
+        RtcSave {
+            base: self.counter.base,
+            latched: self.latched,
+            day_carry: self.day_carry,
+            halted: self.counter.halted,
+        }
+    }
+}
+
+impl From<RtcSave> for Rtc {
+    fn from(save: RtcSave) -> Self {
+        Self {
+            counter: Counter {
+                base: save.base,
+                halted: save.halted,
+            },
+            latched: save.latched,
+            latch_signal: false,
+            day_carry: save.day_carry,
+        }
     }
 }

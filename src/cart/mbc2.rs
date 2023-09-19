@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use super::{mem::Mem, Mbc};
+use super::{mem::Mem, save::MbcSave, Mbc};
 
 #[derive(Default)]
 pub struct Mbc2 {
@@ -57,5 +57,9 @@ impl Mbc for Mbc2 {
         if self.ram_enabled {
             mem.ram.write(self.ram_offset(addr), val & 0x0f);
         }
+    }
+
+    fn save(&self) -> MbcSave {
+        MbcSave::None
     }
 }

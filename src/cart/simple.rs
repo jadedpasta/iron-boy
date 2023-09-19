@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use super::{mem::Mem, Mbc};
+use super::{mem::Mem, Mbc, save::MbcSave};
 
 #[derive(Default)]
 pub struct Simple;
@@ -19,5 +19,9 @@ impl Mbc for Simple {
 
     fn write_high(&mut self, addr: u16, val: u8, mem: &mut Mem) {
         mem.ram.write(addr as usize, val)
+    }
+
+    fn save(&self) -> MbcSave {
+        MbcSave::None
     }
 }

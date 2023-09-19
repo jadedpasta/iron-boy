@@ -18,9 +18,12 @@ mod timer;
 
 use audio::Audio;
 use cart::Cart;
+use cart::save::CartSave;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::{PresentMode, TextureFormat};
 use pixels::{PixelsBuilder, SurfaceTexture};
+use std::fs::File;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{env, fs, mem};
 use winit::dpi::LogicalSize;
@@ -37,12 +40,26 @@ struct Cgb {
 
 impl Cgb {
     fn new(rom_file_name: impl AsRef<str>, audio: Audio) -> Self {
+        let save_path = Path::new(rom_file_name.as_ref());
+        let save_path = save_path.with_extension("cart");
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
-        let cart = Cart::from_rom(rom.into_boxed_slice());
+
+
+        let cart = if save_path.exists() {
+            let save_file = File::open(save_path).unwrap();
+            let save = bincode::deserialize_from(save_file).unwrap();
+            Cart::from_rom_and_save(rom.into_boxed_slice(), save)
+        } else {
+            Cart::from_rom(rom.into_boxed_slice())
+        };
         Self {
             system: CgbSystem::new(cart),
             audio,
         }
+    }
+
+    fn cart(&self) -> &Cart {
+        self.system.cart()
     }
 
     fn compute_next_frame(&mut self, frame_buff: &mut FrameBuffer) -> Duration {
@@ -72,7 +89,7 @@ fn main() {
     let file_name = env::args().nth(1).unwrap();
 
     let audio = audio::init().unwrap();
-    let mut cgb = Cgb::new(file_name, audio);
+    let mut cgb = Cgb::new(file_name.clone(), audio);
 
     let event_loop = EventLoop::new();
 
@@ -137,6 +154,11 @@ fn main() {
                     ..
                 } => match (virtual_keycode, state) {
                     (VirtualKeyCode::Escape, ElementState::Released) => {
+                        let path = Path::new(&file_name);
+                        let path = path.with_extension("cart");
+                        let save_file = File::create(path).unwrap();
+                        let save: CartSave = cgb.cart().save();
+                        bincode::serialize_into(save_file, &save).unwrap();
                         *control_flow = ControlFlow::Exit
                     }
                     (key, state) => handle_key(&mut cgb, key, state),

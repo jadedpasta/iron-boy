@@ -8,6 +8,7 @@ use self::{
     mbc2::Mbc2,
     mbc3::Mbc3,
     mem::{Mem, OptionalSegment, Segment},
+    save::{CartSave, MbcSave},
     simple::Simple,
 };
 
@@ -16,6 +17,7 @@ mod mbc2;
 mod mbc3;
 mod mem;
 mod rtc;
+pub mod save;
 mod simple;
 
 #[delegatable_trait]
@@ -24,6 +26,7 @@ pub trait Mbc {
     fn write_low(&mut self, addr: u16, val: u8, mem: &mut Mem);
     fn read_high(&self, addr: u16, mem: &Mem) -> u8;
     fn write_high(&mut self, addr: u16, val: u8, mem: &mut Mem);
+    fn save(&self) -> MbcSave;
 }
 
 #[derive(Delegate)]
@@ -81,13 +84,13 @@ impl Cart {
 
         let mbc = match cart_type {
             0x00 | 0x08 | 0x09 => AnyMbc::Simple(Default::default()),
-            0x01 | 0x02 | 0x03 => AnyMbc::Mbc1(Default::default()),
+            0x01..=0x03 => AnyMbc::Mbc1(Default::default()),
             0x05 | 0x06 => {
                 ram_size = 512;
                 AnyMbc::Mbc2(Default::default())
             }
             0x0f | 0x10 => AnyMbc::Mbc3(Mbc3::new_with_rtc()),
-            0x11 | 0x12 | 0x13 => AnyMbc::Mbc3(Default::default()),
+            0x11..=0x13 => AnyMbc::Mbc3(Default::default()),
             _ => panic!("Unknown cartrige type: {cart_type:x}"),
         };
 
@@ -104,6 +107,29 @@ impl Cart {
         Self {
             mem: Mem { rom, ram },
             mbc,
+        }
+    }
+
+    pub fn from_rom_and_save(rom: Box<[u8]>, save: CartSave) -> Self {
+        let mut cart = Self::from_rom(rom);
+
+        if let MbcSave::Rtc(rtc) = save.mbc {
+            if let AnyMbc::Mbc3(mbc3) = &mut cart.mbc {
+                if mbc3.has_rtc() {
+                    mbc3.set_rtc(rtc.into())
+                }
+            }
+        }
+
+        cart.mem.ram = save.ram.try_into().unwrap();
+
+        cart
+    }
+
+    pub fn save(&self) -> CartSave {
+        CartSave {
+            mbc: self.mbc.save(),
+            ram: self.mem.ram.raw(),
         }
     }
 }
