@@ -39,7 +39,9 @@ impl Cpu {
             return false;
         }
 
-        let Some(bit) = bus.pop_interrupt() else { return false; };
+        let Some(bit) = bus.pop_interrupt() else {
+            return false;
+        };
         // Disable interrupts inside the interrupt handler by default.
         self.di();
 

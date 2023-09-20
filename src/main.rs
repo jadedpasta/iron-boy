@@ -17,8 +17,8 @@ mod system;
 mod timer;
 
 use audio::Audio;
-use cart::Cart;
 use cart::save::CartSave;
+use cart::Cart;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::{PresentMode, TextureFormat};
 use pixels::{PixelsBuilder, SurfaceTexture};
@@ -43,7 +43,6 @@ impl Cgb {
         let save_path = Path::new(rom_file_name.as_ref());
         let save_path = save_path.with_extension("cart");
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
-
 
         let cart = if save_path.exists() {
             let save_file = File::open(save_path).unwrap();
@@ -80,7 +79,9 @@ impl Cgb {
 }
 
 fn handle_key(cgb: &mut Cgb, key: VirtualKeyCode, state: ElementState) {
-    let Some(button) = Button::from_keycode(key) else { return; };
+    let Some(button) = Button::from_keycode(key) else {
+        return;
+    };
     let state = ButtonState::from_state(state);
     cgb.handle_joypad(button, state);
 }

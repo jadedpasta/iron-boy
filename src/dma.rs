@@ -98,7 +98,9 @@ impl Dma {
     }
 
     pub fn execute(&mut self, bus: &mut impl DmaBus) {
-        let Some(state) = &self.state else { return; };
+        let Some(state) = &self.state else {
+            return;
+        };
 
         match state.ty {
             DmaType::General => {

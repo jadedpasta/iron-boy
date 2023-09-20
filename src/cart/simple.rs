@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use super::{mem::Mem, Mbc, save::MbcSave};
+use super::{mem::Mem, save::MbcSave, Mbc};
 
 #[derive(Default)]
 pub struct Simple;
