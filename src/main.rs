@@ -17,7 +17,6 @@ mod system;
 mod timer;
 
 use audio::Audio;
-use cart::save::CartSave;
 use cart::Cart;
 use joypad::{Button, ButtonState};
 use pixels::wgpu::{PresentMode, TextureFormat};
@@ -40,17 +39,19 @@ struct Cgb {
 
 impl Cgb {
     fn new(rom_file_name: impl AsRef<str>, audio: Audio) -> Self {
-        let save_path = Path::new(rom_file_name.as_ref());
-        let save_path = save_path.with_extension("cart");
         let rom = fs::read(rom_file_name.as_ref()).unwrap();
 
-        let cart = if save_path.exists() {
-            let save_file = File::open(save_path).unwrap();
-            let save = bincode::deserialize_from(save_file).unwrap();
-            Cart::from_rom_and_save(rom.into_boxed_slice(), save)
-        } else {
-            Cart::from_rom(rom.into_boxed_slice())
-        };
+        let mut cart = Cart::from_rom(rom.into_boxed_slice());
+        if cart.battery_backed() {
+            let save_path = Path::new(rom_file_name.as_ref());
+            let save_path = save_path.with_extension("cart");
+            if save_path.exists() {
+                let save_file = File::open(save_path).unwrap();
+                let save = bincode::deserialize_from(save_file).unwrap();
+                cart.load_from_save(save);
+            }
+        }
+
         Self {
             system: CgbSystem::new(cart),
             audio,
@@ -155,11 +156,12 @@ fn main() {
                     ..
                 } => match (virtual_keycode, state) {
                     (VirtualKeyCode::Escape, ElementState::Released) => {
-                        let path = Path::new(&file_name);
-                        let path = path.with_extension("cart");
-                        let save_file = File::create(path).unwrap();
-                        let save: CartSave = cgb.cart().save();
-                        bincode::serialize_into(save_file, &save).unwrap();
+                        if let Some(save) = cgb.cart().save() {
+                            let path = Path::new(&file_name);
+                            let path = path.with_extension("cart");
+                            let save_file = File::create(path).unwrap();
+                            bincode::serialize_into(save_file, &save).unwrap();
+                        }
                         *control_flow = ControlFlow::Exit
                     }
                     (key, state) => handle_key(&mut cgb, key, state),

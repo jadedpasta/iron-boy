@@ -58,6 +58,7 @@ fn header(rom: &[u8]) -> (u8, usize, usize) {
 pub struct Cart<M = AnyMbc> {
     mem: Mem,
     mbc: M,
+    battery_backed: bool,
 }
 
 impl<M: Mbc> Cart<M> {
@@ -94,6 +95,11 @@ impl Cart {
             _ => panic!("Unknown cartrige type: {cart_type:x}"),
         };
 
+        let battery_backed = matches!(
+            cart_type,
+            0x03 | 0x06 | 0x09 | 0x0d | 0x0f | 0x10 | 0x13 | 0x1b | 0x1e | 0x22 | 0xff
+        );
+
         assert!(rom_size >= rom.len(), "ROM is too big");
         if rom_size > rom.len() {
             let mut vec = Vec::from(rom);
@@ -107,29 +113,34 @@ impl Cart {
         Self {
             mem: Mem { rom, ram },
             mbc,
+            battery_backed,
         }
     }
 
-    pub fn from_rom_and_save(rom: Box<[u8]>, save: CartSave) -> Self {
-        let mut cart = Self::from_rom(rom);
-
+    pub fn load_from_save(&mut self, save: CartSave) {
         if let MbcSave::Rtc(rtc) = save.mbc {
-            if let AnyMbc::Mbc3(mbc3) = &mut cart.mbc {
+            if let AnyMbc::Mbc3(mbc3) = &mut self.mbc {
                 if mbc3.has_rtc() {
                     mbc3.set_rtc(rtc.into())
                 }
             }
         }
 
-        cart.mem.ram = save.ram.try_into().unwrap();
-
-        cart
+        self.mem.ram = save.ram.try_into().unwrap();
     }
 
-    pub fn save(&self) -> CartSave {
-        CartSave {
-            mbc: self.mbc.save(),
-            ram: self.mem.ram.raw(),
+    pub fn battery_backed(&self) -> bool {
+        self.battery_backed
+    }
+
+    pub fn save(&self) -> Option<CartSave> {
+        if self.battery_backed {
+            Some(CartSave {
+                mbc: self.mbc.save(),
+                ram: self.mem.ram.raw(),
+            })
+        } else {
+            None
         }
     }
 }
