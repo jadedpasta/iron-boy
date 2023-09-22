@@ -44,7 +44,7 @@ impl Cgb {
         }
 
         Self {
-            system: CgbSystem::new(cart),
+            system: Box::new(CgbSystem::new(cart)),
             audio,
         }
     }

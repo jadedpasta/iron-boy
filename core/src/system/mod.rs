@@ -63,8 +63,8 @@ pub struct CgbSystem {
 }
 
 impl CgbSystem {
-    pub fn new(cart: Cart) -> Box<Self> {
-        Box::new(CgbSystem {
+    pub fn new(cart: Cart) -> Self {
+        CgbSystem {
             cpu: Cpu::default(),
             timer: Timer::new(),
             dma: Dma::new(),
@@ -77,7 +77,7 @@ impl CgbSystem {
             cgb_mode: true,
             key0: 0,
             cart,
-        })
+        }
     }
 
     pub fn cart(&self) -> &Cart {
