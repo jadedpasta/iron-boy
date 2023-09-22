@@ -953,16 +953,23 @@ dependencies = [
 name = "iron-boy"
 version = "0.1.0"
 dependencies = [
- "ambassador",
- "bilge",
  "bincode",
  "cpal",
  "crossbeam-queue",
  "dasp",
- "partial-borrow",
+ "iron-boy-core",
  "pixels",
- "serde",
  "winit",
+]
+
+[[package]]
+name = "iron-boy-core"
+version = "0.1.0"
+dependencies = [
+ "ambassador",
+ "bilge",
+ "partial-borrow",
+ "serde",
 ]
 
 [[package]]

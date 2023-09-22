@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
-use winit::event::{ElementState, VirtualKeyCode};
 
 pub enum Button {
     Right = 0,
@@ -13,35 +12,9 @@ pub enum Button {
     Start,
 }
 
-impl Button {
-    pub fn from_keycode(key: VirtualKeyCode) -> Option<Self> {
-        use VirtualKeyCode::*;
-        match key {
-            W => Some(Self::Up),
-            A => Some(Self::Left),
-            S => Some(Self::Down),
-            D => Some(Self::Right),
-            LBracket => Some(Self::Start),
-            RBracket => Some(Self::Select),
-            Comma => Some(Self::A),
-            Period => Some(Self::B),
-            _ => None,
-        }
-    }
-}
-
 pub enum ButtonState {
     Pressed,
     Released,
-}
-
-impl ButtonState {
-    pub fn from_state(state: ElementState) -> Self {
-        match state {
-            ElementState::Pressed => Self::Pressed,
-            ElementState::Released => Self::Released,
-        }
-    }
 }
 
 pub trait JoypadBus {

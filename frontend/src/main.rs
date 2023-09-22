@@ -3,22 +3,9 @@
 
 #![allow(clippy::new_without_default)]
 
-mod apu;
 mod audio;
-mod cart;
-mod cpu;
-mod dma;
-mod interrupt;
-mod joypad;
-mod memory;
-mod ppu;
-mod reg;
-mod system;
-mod timer;
 
 use audio::Audio;
-use cart::Cart;
-use joypad::{Button, ButtonState};
 use pixels::wgpu::{PresentMode, TextureFormat};
 use pixels::{PixelsBuilder, SurfaceTexture};
 use std::fs::File;
@@ -30,7 +17,11 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-use system::{CgbSystem, FrameBuffer};
+use iron_boy_core::{
+    cart::Cart,
+    joypad::{Button, ButtonState},
+    system::{self, CgbSystem, FrameBuffer},
+};
 
 struct Cgb {
     system: Box<CgbSystem>,
@@ -80,10 +71,22 @@ impl Cgb {
 }
 
 fn handle_key(cgb: &mut Cgb, key: VirtualKeyCode, state: ElementState) {
-    let Some(button) = Button::from_keycode(key) else {
-        return;
+    use VirtualKeyCode as VK;
+    let button = match key {
+        VK::W => Button::Up,
+        VK::A => Button::Left,
+        VK::S => Button::Down,
+        VK::D => Button::Right,
+        VK::LBracket => Button::Start,
+        VK::RBracket => Button::Select,
+        VK::Comma => Button::A,
+        VK::Period => Button::B,
+        _ => return,
     };
-    let state = ButtonState::from_state(state);
+    let state = match state {
+        ElementState::Pressed => ButtonState::Pressed,
+        ElementState::Released => ButtonState::Released,
+    };
     cgb.handle_joypad(button, state);
 }
 

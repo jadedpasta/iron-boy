@@ -1,0 +1,15 @@
+[package]
+name = "iron-boy-core"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+ambassador = { version = "0.3.5", default-features = false }
+bilge = "0.2.0"
+partial-borrow = "1.0.1"
+serde = { version = "1.0.188", features = ["derive"] }
+
+[features]
+cpu-debug = []
+debug = ["cpu-debug"]

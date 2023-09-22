@@ -4,7 +4,7 @@ use bilge::prelude::*;
 
 use crate::{
     memory::{OamBytes, Palettes, VRamBytes},
-    system, FrameBuffer,
+    system::{self, FrameBuffer},
 };
 
 #[bitsize(2)]
