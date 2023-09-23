@@ -37,7 +37,7 @@ trait Channel {
 trait PeriodDividerRegs {
     fn neg_period(&self) -> u16;
     fn period(&self) -> u16 {
-        (!self.neg_period() + 1) & 0x7ff
+        (!self.neg_period()).wrapping_add(1) & 0x7ff
     }
 }
 
