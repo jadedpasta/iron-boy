@@ -14,8 +14,7 @@ use dasp::{
 };
 
 use crossbeam_queue::ArrayQueue;
-
-use crate::system::MachineCycle;
+use iron_boy_core::system::MachineCycle;
 
 const CHANNELS: u16 = 2;
 const ALPHA: f64 = 0.0001;
