@@ -3,4 +3,9 @@ resolver = "2"
 members = [
     "core",
     "frontend",
+    "run-wasm",
+]
+default-members = [
+    "core",
+    "frontend",
 ]

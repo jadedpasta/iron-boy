@@ -1,3 +1,8 @@
 [registries.crates-io]
 protocol = "sparse"
 
+[alias]
+run-wasm = "run --release --package run-wasm --"
+
+# [build]
+# target = "wasm32-unknown-unknown"

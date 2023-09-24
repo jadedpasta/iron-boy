@@ -5,7 +5,7 @@ use std::path::Path;
 
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Parser, Default)]
 #[command(author, version, about, long_about = None)]
 pub struct Options {
     pub rom_file_name: Option<Box<Path>>,
