@@ -11,13 +11,14 @@ use pixels::{
 use winit::{
     dpi::LogicalSize,
     event::{Event, KeyboardInput, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowBuilder},
 };
 
 use crate::{
     audio::{self, Audio},
     emulator::{self, Cgb},
+    event::FrontendEvent,
     gui::GuiEngine,
     options::Options,
 };
@@ -79,6 +80,7 @@ use wasm::EngineWindow;
 type EngineWindow = Window;
 
 pub struct Engine {
+    proxy: EventLoopProxy<FrontendEvent>,
     gui: GuiEngine,
     audio: Audio,
     pixels: Pixels,
@@ -88,8 +90,8 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new<T>(
-        event_loop: &EventLoop<T>,
+    pub async fn new(
+        event_loop: &EventLoop<FrontendEvent>,
         options: Options,
     ) -> Result<Self, Box<dyn Error>> {
         let size = LogicalSize::new(
@@ -138,6 +140,7 @@ impl Engine {
         );
 
         Ok(Self {
+            proxy: event_loop.create_proxy(),
             gui,
             window,
             audio: audio::init()?,
@@ -147,9 +150,9 @@ impl Engine {
         })
     }
 
-    pub fn handle_event<T>(
+    pub fn handle_event(
         &mut self,
-        event: Event<T>,
+        event: Event<FrontendEvent>,
         control_flow: &mut ControlFlow,
     ) -> Result<(), Box<dyn Error>> {
         match event {
@@ -164,7 +167,7 @@ impl Engine {
                     // Not enough time has elapsed yet; nothing to do
                     return Ok(());
                 }
-                self.gui.update(&self.window);
+                self.gui.update(&self.window, &self.proxy);
                 self.window.request_redraw();
                 let Some(cgb) = &mut self.cgb else {
                     *control_flow = ControlFlow::Poll;
@@ -219,6 +222,14 @@ impl Engine {
                     _ => (),
                 }
             }
+            Event::UserEvent(event) => match event {
+                FrontendEvent::NewRom(rom) => {
+                    // Make sure the audio stream has started. On the web, browsers block playing
+                    // audio streams until the user has sufficiently interacted with the page.
+                    self.audio.resume()?;
+                    self.cgb = Some(Cgb::new_from_rom(rom))
+                }
+            },
             _ => (),
         }
         Ok(())

@@ -44,6 +44,13 @@ impl Cgb {
         })
     }
 
+    pub fn new_from_rom(rom: Box<[u8]>) -> Self {
+        let cart = Cart::from_rom(rom);
+        Self {
+            system: Box::new(CgbSystem::new(cart)),
+        }
+    }
+
     pub fn compute_next_frame(&mut self, pixels: &mut Pixels, audio: &mut Audio) -> Duration {
         let frame_buff = pixels.frame_mut();
         let frame_buff: &mut [u8; mem::size_of::<FrameBuffer>()] =

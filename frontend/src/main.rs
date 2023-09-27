@@ -4,22 +4,28 @@
 #![allow(clippy::new_without_default)]
 
 mod audio;
+mod background;
 mod emulator;
 mod engine;
+mod event;
 mod gui;
 mod options;
 
 use engine::Engine;
+use event::FrontendEvent;
 use options::Options;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 
-async fn run(options: Options) {
-    let event_loop = EventLoop::new();
+async fn init(options: Options) -> (EventLoop<FrontendEvent>, Engine) {
+    let event_loop = EventLoopBuilder::with_user_event().build();
 
-    let mut engine = Engine::new(&event_loop, options)
+    let engine = Engine::new(&event_loop, options)
         .await
         .expect("Error while initializing");
+    (event_loop, engine)
+}
 
+fn run(event_loop: EventLoop<FrontendEvent>, mut engine: Engine) {
     event_loop.run(move |event, _, control_flow| {
         if let Err(e) = engine.handle_event(event, control_flow) {
             eprintln!("Error while running event loop: {e:?}");
@@ -33,7 +39,10 @@ fn main() {
     {
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         console_log::init_with_level(log::Level::Warn).expect("error initalizing logger");
-        wasm_bindgen_futures::spawn_local(run(Default::default()));
+        wasm_bindgen_futures::spawn_local(async {
+            let (event_loop, engine) = init(Default::default()).await;
+            run(event_loop, engine)
+        });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -41,6 +50,13 @@ fn main() {
         use clap::Parser;
         let options = Options::parse();
         env_logger::init();
-        pollster::block_on(run(options));
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()
+            .expect("Error initializing tokio runtime");
+        let (event_loop, engine) = rt.block_on(init(options));
+        let _guard = rt.enter();
+        run(event_loop, engine);
     }
 }

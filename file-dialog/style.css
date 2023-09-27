@@ -1,0 +1,38 @@
+.file-dialog {
+    padding: 1rem;
+    background: rgb(50, 50, 50);
+    border: 1px solid rgb(100, 100, 100);
+    border-radius: 1rem;
+    box-shadow: 0 0 1rem 0.5rem rgb(50, 50, 50);
+}
+
+.file-dialog * {
+    color: rgb(150, 150, 150);
+    font-family: "Ubuntu", sans-serif;
+}
+
+.file-dialog label {
+    color: rgb(200, 200, 200);
+}
+
+.file-dialog button {
+    color: black;
+}
+
+.file-dialog::backdrop {
+    background: transparent;
+}
+
+.file-dialog form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.file-dialog input {
+    border: 1px solid rgb(100, 100, 100);
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 1rem;
+    padding: 1rem;
+}

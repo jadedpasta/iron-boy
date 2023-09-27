@@ -4,6 +4,7 @@ members = [
     "core",
     "frontend",
     "run-wasm",
+    "file-dialog"
 ]
 default-members = [
     "core",

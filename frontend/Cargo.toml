@@ -6,6 +6,7 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 iron-boy-core = { path = "../core" }
+file-dialog = { path = "../file-dialog" }
 bincode = "1.3.3"
 crossbeam-queue = "0.3.8"
 dasp = { version = "0.11.0", features = ["interpolate-linear", "interpolate"] }
@@ -28,5 +29,5 @@ cpal = { version = "0.15.2", features = ["wasm-bindgen"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10.0"
-pollster = "0.3.0"
+tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
 cpal = "0.15.2"

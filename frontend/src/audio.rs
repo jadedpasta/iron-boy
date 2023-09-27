@@ -4,8 +4,8 @@ use std::{error::Error, f32, sync::Arc};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BufferSize, Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    SupportedBufferSize,
+    BufferSize, Device, FromSample, PlayStreamError, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig, SupportedBufferSize,
 };
 
 use dasp::{
@@ -19,7 +19,8 @@ use iron_boy_core::system::MachineCycle;
 const CHANNELS: u16 = 2;
 const ALPHA: f64 = 0.0001;
 const BEND_CENTS: f64 = 3.0;
-const BUFFER_SIZE: u32 = 256;
+// const BUFFER_SIZE: u32 = 256;
+const BUFFER_SIZE: u32 = 512;
 const SAMPLES_PER_M_CYCLE: usize = 2;
 const FREQ: usize = MachineCycle::FREQ * SAMPLES_PER_M_CYCLE;
 const SAMPLES_PER_FRAME: usize = MachineCycle::PER_FRAME * SAMPLES_PER_M_CYCLE;
@@ -100,7 +101,7 @@ where
 }
 
 pub struct Audio {
-    _stream: Stream, // We have to keep the stream alive to keep sound playing
+    stream: Stream,
     queue: Arc<ArrayQueue<Frame>>,
     resampler: Resampler<Linear<Frame>>,
     min_ratio: f64,
@@ -110,20 +111,24 @@ pub struct Audio {
 }
 
 impl Audio {
+    pub fn resume(&self) -> Result<(), PlayStreamError> {
+        self.stream.play()
+    }
+
     pub fn update_ratio(&mut self) {
         // println!("push_count: {}/{}", self.push_count, MachineCycle::PER_FRAME);
         self.push_count = 0;
         let len = self.queue.len();
         if len > 0 {
             // Low-pass filter on the queue length
-            // println!("avg: {}, curr: {}", self.average_len, len);
+            // log::warn!("avg: {}, curr: {}", self.average_len, len);
             self.average_len += (len as f64 - self.average_len) * ALPHA;
         } else {
             // HACK: Shove some samples in there to get the queue to the expected len
             for _ in 0..(self.average_len / self.resampler.ratio) as usize {
                 self.push_frame(DaspFrame::EQUILIBRIUM);
             }
-            // println!("hack: {}, {}", self.average_len, self.queue.len());
+            log::warn!("hack: {}, {}", self.average_len, self.queue.len());
         }
 
         let ratio =
@@ -191,7 +196,7 @@ pub fn init() -> Result<Audio, Box<dyn Error>> {
 
     let audio = Audio {
         push_count: 0,
-        _stream: stream,
+        stream,
         average_len: queue.capacity() as f64 / 2.0 - sample_rate / fps,
         queue,
         resampler: Resampler::new(ratio),
