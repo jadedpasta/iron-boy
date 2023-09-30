@@ -3,6 +3,7 @@
 
 use std::mem;
 
+use anyhow::Result;
 use egui::{ClippedPrimitive, Context, TexturesDelta};
 use egui_wgpu::{
     renderer::ScreenDescriptor,
@@ -30,7 +31,7 @@ pub struct GuiEngine {
     renderer: Renderer,
     textures: TexturesDelta,
     paint_jobs: Vec<ClippedPrimitive>,
-    ui: Ui,
+    pub ui: Ui,
 }
 
 impl GuiEngine {
@@ -41,7 +42,7 @@ impl GuiEngine {
         scale_factor: f32,
         device: &Device,
         texture_format: TextureFormat,
-    ) -> GuiEngine {
+    ) -> Result<GuiEngine> {
         let max_texture_size = device.limits().max_texture_dimension_2d as usize;
 
         let egui_ctx = Context::default();
@@ -54,31 +55,34 @@ impl GuiEngine {
         };
         let renderer = Renderer::new(device, texture_format, None, 1);
 
-        Self {
+        Ok(Self {
             egui_ctx,
             egui_state,
             screen_descriptor,
             renderer,
             textures: Default::default(),
             paint_jobs: Vec::new(),
-            ui: Ui::new(),
-        }
+            ui: Ui::new()?,
+        })
     }
 
     pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
         self.egui_state.on_event(&self.egui_ctx, event).consumed
     }
 
-    pub fn update(&mut self, window: &Window, proxy: &EventLoopProxy<FrontendEvent>) {
+    pub fn update(&mut self, window: &Window, proxy: &EventLoopProxy<FrontendEvent>) -> Result<()> {
         let raw_input = self.egui_state.take_egui_input(window);
+        let mut result = Ok(());
         let output = self
             .egui_ctx
-            .run(raw_input, |ctx| self.ui.update(ctx, proxy));
+            .run(raw_input, |ctx| result = self.ui.update(ctx, proxy));
+        result?;
 
         self.textures.append(output.textures_delta);
         self.egui_state
             .handle_platform_output(window, &self.egui_ctx, output.platform_output);
         self.paint_jobs = self.egui_ctx.tessellate(output.shapes);
+        Ok(())
     }
 
     pub fn render(

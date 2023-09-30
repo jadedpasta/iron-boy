@@ -2,11 +2,12 @@
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
 use std::{
-    error::Error,
     fs::{self, File},
     mem,
     time::Duration,
 };
+
+use anyhow::{anyhow, Result};
 
 pub use iron_boy_core::system::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -25,8 +26,11 @@ pub struct Cgb {
 }
 
 impl Cgb {
-    pub fn new(options: &Options) -> Result<Self, Box<dyn Error>> {
-        let rom_file_name = options.rom_file_name.as_ref().ok_or("No ROM file")?;
+    pub fn new(options: &Options) -> Result<Self> {
+        let rom_file_name = options
+            .rom_file_name
+            .as_ref()
+            .ok_or(anyhow!("No ROM file"))?;
         let rom = fs::read(rom_file_name)?;
 
         let mut cart = Cart::from_rom(rom.into_boxed_slice());
@@ -86,12 +90,12 @@ impl Cgb {
         self.handle_joypad(button, state);
     }
 
-    pub fn handle_close(&self, options: &Options) -> Result<(), Box<dyn Error>> {
+    pub fn handle_close(&self, options: &Options) -> Result<()> {
         if let Some(save) = self.system.cart().save() {
             let path = options
                 .rom_file_name
                 .as_ref()
-                .ok_or("No ROM file")?
+                .ok_or(anyhow!("No ROM file"))?
                 .with_extension("cart");
             let save_file = File::create(path)?;
             bincode::serialize_into(save_file, &save)?;

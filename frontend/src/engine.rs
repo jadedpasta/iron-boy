@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use std::error::Error;
-
+use anyhow::Result;
 use instant::Instant;
 use pixels::{
     wgpu::{PresentMode, TextureFormat},
@@ -90,10 +89,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new(
-        event_loop: &EventLoop<FrontendEvent>,
-        options: Options,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(event_loop: &EventLoop<FrontendEvent>, options: Options) -> Result<Self> {
         let size = LogicalSize::new(
             emulator::SCREEN_WIDTH as u16,
             emulator::SCREEN_HEIGHT as u16,
@@ -137,7 +133,7 @@ impl Engine {
             scale_factor,
             pixels.device(),
             pixels.render_texture_format(),
-        );
+        )?;
 
         Ok(Self {
             proxy: event_loop.create_proxy(),
@@ -150,11 +146,11 @@ impl Engine {
         })
     }
 
-    pub fn handle_event(
+    fn handle_event_impl(
         &mut self,
         event: Event<FrontendEvent>,
         control_flow: &mut ControlFlow,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<()> {
         match event {
             Event::MainEventsCleared => {
                 let now = Instant::now();
@@ -167,7 +163,7 @@ impl Engine {
                     // Not enough time has elapsed yet; nothing to do
                     return Ok(());
                 }
-                self.gui.update(&self.window, &self.proxy);
+                self.gui.update(&self.window, &self.proxy)?;
                 self.window.request_redraw();
                 let Some(cgb) = &mut self.cgb else {
                     *control_flow = ControlFlow::Poll;
@@ -229,9 +225,17 @@ impl Engine {
                     self.audio.resume()?;
                     self.cgb = Some(Cgb::new_from_rom(rom))
                 }
+                FrontendEvent::Error(error) => return Err(error),
             },
             _ => (),
         }
         Ok(())
+    }
+
+    pub fn handle_event(&mut self, event: Event<FrontendEvent>, control_flow: &mut ControlFlow) {
+        if let Err(error) = self.handle_event_impl(event, control_flow) {
+            log::error!("{error:#}");
+            self.gui.ui.add_error_popup(error);
+        }
     }
 }

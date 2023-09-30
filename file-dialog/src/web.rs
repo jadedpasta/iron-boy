@@ -8,28 +8,31 @@ use std::{
 };
 
 use egui::Context;
+use futures::future::FutureExt;
 use js_sys::{Promise, Uint8Array};
 use thiserror::Error;
 use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    File, FileReader, HtmlButtonElement, HtmlDialogElement, HtmlFormElement, HtmlInputElement,
-    ProgressEvent,
+    Document, DomException, File, FileReader, HtmlButtonElement, HtmlDialogElement, HtmlElement,
+    HtmlFormElement, HtmlInputElement, ProgressEvent,
 };
 
 const DEFAULT_STYLE_CSS: &str = include_str!("../style.css");
 
 #[derive(Error, Debug)]
-pub enum Error {
-    #[error("failed to access DOM")]
-    Dom,
-    #[error("JS exception: {0:?}")]
-    Js(JsValue),
+#[error("JavaScript exception: {0}")]
+pub struct JsError(Box<str>);
+
+impl From<JsValue> for JsError {
+    fn from(value: JsValue) -> Self {
+        Self(format!("{value:?}").into_boxed_str())
+    }
 }
 
-impl From<JsValue> for Error {
-    fn from(value: JsValue) -> Self {
-        Self::Js(value)
+impl From<DomException> for JsError {
+    fn from(e: DomException) -> Self {
+        Self(e.message().into_boxed_str())
     }
 }
 
@@ -38,6 +41,8 @@ pub struct FileHandle {
     file: File,
     progress: Rc<Cell<f64>>,
 }
+
+pub type ReadError = JsError;
 
 impl FileHandle {
     fn new(file: File) -> Self {
@@ -51,7 +56,7 @@ impl FileHandle {
         self.progress.get()
     }
 
-    pub async fn read(&self) -> Result<Box<[u8]>, Error> {
+    pub async fn read(&self) -> Result<Box<[u8]>, ReadError> {
         let reader = FileReader::new()?;
 
         let progress = Rc::clone(&self.progress);
@@ -61,13 +66,22 @@ impl FileHandle {
 
         reader.set_onprogress(Some(progress_callback.as_ref().unchecked_ref()));
 
-        let promise = Promise::new(&mut |resolve, _| {
+        let load: JsFuture = Promise::new(&mut |resolve, _| {
             reader.set_onload(Some(&resolve));
-        });
+        })
+        .into();
+        let error: JsFuture = Promise::new(&mut |resolve, _| {
+            reader.set_onerror(Some(&resolve));
+        })
+        .into();
 
         reader.read_as_array_buffer(&self.file)?;
 
-        JsFuture::from(promise).await?;
+        futures::select! { _ = load.fuse() => (), _ = error.fuse() => () }
+
+        if let Some(error) = reader.error() {
+            return Err(error.into());
+        }
 
         let result = Uint8Array::new(&reader.result()?);
         let result = result.to_vec().into_boxed_slice();
@@ -85,20 +99,19 @@ pub struct FileDialog {
     input: HtmlInputElement,
 }
 
+#[derive(Error, Debug)]
+pub enum NewDialogError {
+    #[error("failed to access DOM")]
+    Dom,
+    #[error("{0}")]
+    Js(#[from] JsError),
+}
+
+pub type OpenDialogError = JsError;
+pub type FileAsyncDialogError = JsError;
+
 impl FileDialog {
-    pub fn new() -> Result<Self, Error> {
-        let window = web_sys::window().ok_or(Error::Dom)?;
-        let document = window.document().ok_or(Error::Dom)?;
-        let body = document.body().ok_or(Error::Dom)?;
-
-        if !STYLESHEET_INJECTED.load(Ordering::Acquire) {
-            let head = document.head().ok_or(Error::Dom)?;
-            let style = document.create_element("style")?;
-            style.set_inner_html(DEFAULT_STYLE_CSS);
-            head.append_child(&style)?;
-            STYLESHEET_INJECTED.store(true, Ordering::Release);
-        }
-
+    fn new_on_element(document: Document, body: HtmlElement) -> Result<Self, JsError> {
         // <dialog class="file-dialog">
         let dialog: HtmlDialogElement = document.create_element("dialog")?.unchecked_into();
         dialog.set_class_name("file-dialog");
@@ -144,7 +157,23 @@ impl FileDialog {
         Ok(FileDialog { dialog, input })
     }
 
-    pub fn open(&self) -> Result<(), Error> {
+    pub fn new() -> Result<Self, NewDialogError> {
+        let window = web_sys::window().ok_or(NewDialogError::Dom)?;
+        let document = window.document().ok_or(NewDialogError::Dom)?;
+        let body = document.body().ok_or(NewDialogError::Dom)?;
+
+        if !STYLESHEET_INJECTED.load(Ordering::Acquire) {
+            let head = document.head().ok_or(NewDialogError::Dom)?;
+            let style = document.create_element("style").map_err(JsError::from)?;
+            style.set_inner_html(DEFAULT_STYLE_CSS);
+            head.append_child(&style).map_err(JsError::from)?;
+            STYLESHEET_INJECTED.store(true, Ordering::Release);
+        }
+
+        Ok(Self::new_on_element(document, body)?)
+    }
+
+    pub fn open(&self) -> Result<(), OpenDialogError> {
         self.dialog.show_modal()?;
         Ok(())
     }
@@ -158,7 +187,7 @@ impl FileDialog {
         self.input.files()?.item(0).map(FileHandle::new)
     }
 
-    pub async fn file_async(&self) -> Result<Option<FileHandle>, Error> {
+    pub async fn file_async(&self) -> Result<Option<FileHandle>, FileAsyncDialogError> {
         self.open()?;
         let promise = Promise::new(&mut |resolve, reject| {
             if let Err(e) = self

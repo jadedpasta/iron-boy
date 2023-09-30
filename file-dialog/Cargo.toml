@@ -20,6 +20,7 @@ console_log = "1.0.0"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.37"
 js-sys = "0.3.64"
+futures = { version = "0.3.28", default-features = false, features = ["std", "async-await"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "0.3.64"
@@ -38,4 +39,5 @@ features = [
     "File",
     "FileReader",
     "ProgressEvent",
+    "DomException",
 ]

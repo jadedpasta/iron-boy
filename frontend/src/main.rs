@@ -14,7 +14,7 @@ mod options;
 use engine::Engine;
 use event::FrontendEvent;
 use options::Options;
-use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
+use winit::event_loop::{EventLoop, EventLoopBuilder};
 
 async fn init(options: Options) -> (EventLoop<FrontendEvent>, Engine) {
     let event_loop = EventLoopBuilder::with_user_event().build();
@@ -26,12 +26,7 @@ async fn init(options: Options) -> (EventLoop<FrontendEvent>, Engine) {
 }
 
 fn run(event_loop: EventLoop<FrontendEvent>, mut engine: Engine) {
-    event_loop.run(move |event, _, control_flow| {
-        if let Err(e) = engine.handle_event(event, control_flow) {
-            eprintln!("Error while running event loop: {e:?}");
-            *control_flow = ControlFlow::ExitWithCode(1);
-        }
-    });
+    event_loop.run(move |event, _, control_flow| engine.handle_event(event, control_flow));
 }
 
 fn main() {

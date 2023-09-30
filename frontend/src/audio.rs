@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
-use std::{error::Error, f32, sync::Arc};
+use std::{f32, sync::Arc};
 
+use anyhow::{anyhow, Result};
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     BufferSize, Device, FromSample, PlayStreamError, Sample, SampleFormat, SizedSample, Stream,
@@ -32,7 +33,7 @@ fn new_stream<T>(
     device: &Device,
     config: &StreamConfig,
     queue: &Arc<ArrayQueue<Frame>>,
-) -> Result<Stream, Box<dyn Error>>
+) -> Result<Stream>
 where
     T: SizedSample + FromSample<f32>,
 {
@@ -143,11 +144,11 @@ impl Audio {
     }
 }
 
-pub fn init() -> Result<Audio, Box<dyn Error>> {
+pub fn init() -> Result<Audio> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
-        .ok_or("No output device found")?;
+        .ok_or(anyhow!("No output device found"))?;
     let default_config = device.default_output_config()?;
     let sample_format = default_config.sample_format();
     let sample_rate = default_config.sample_rate();
@@ -166,7 +167,7 @@ pub fn init() -> Result<Audio, Box<dyn Error>> {
                 false
             }
         })
-        .ok_or("Could find acceptable audio configuration")?
+        .ok_or(anyhow!("Could find acceptable audio configuration"))?
         .with_sample_rate(sample_rate);
 
     let config = StreamConfig {
@@ -186,7 +187,7 @@ pub fn init() -> Result<Audio, Box<dyn Error>> {
         SampleFormat::I16 => new_stream::<i16>(&device, &config, &queue),
         SampleFormat::U16 => new_stream::<u16>(&device, &config, &queue),
         SampleFormat::U8 => new_stream::<u8>(&device, &config, &queue),
-        sample_format => Err(format!("Unsupported sample format '{sample_format}'").into()),
+        sample_format => Err(anyhow!("Unsupported sample format '{sample_format}'")),
     }?;
 
     let ratio = sample_rate / FREQ as f64;

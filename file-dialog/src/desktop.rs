@@ -59,7 +59,8 @@ impl FileDialog {
     }
 
     pub fn open(&mut self) -> Result<(), OpenDialogError> {
-        Ok(self.dialog.open())
+        self.dialog.open();
+        Ok(())
     }
 
     pub fn file(&mut self) -> Option<FileHandle> {
