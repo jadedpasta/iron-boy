@@ -220,10 +220,11 @@ impl Engine {
             }
             Event::UserEvent(event) => match event {
                 FrontendEvent::NewRom(rom) => {
+                    let cgb = Cgb::new_from_rom(rom)?;
                     // Make sure the audio stream has started. On the web, browsers block playing
                     // audio streams until the user has sufficiently interacted with the page.
                     self.audio.resume()?;
-                    self.cgb = Some(Cgb::new_from_rom(rom))
+                    self.cgb = Some(cgb)
                 }
                 FrontendEvent::Error(error) => return Err(error),
             },

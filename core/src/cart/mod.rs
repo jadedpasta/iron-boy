@@ -2,6 +2,7 @@
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
 use ambassador::{delegatable_trait, Delegate};
+use thiserror::Error;
 
 use self::{
     mbc1::Mbc1,
@@ -38,23 +39,6 @@ pub enum AnyMbc {
     Mbc3(Mbc3),
 }
 
-fn header(rom: &[u8]) -> (u8, usize, usize) {
-    let cart_type = rom[0x147];
-    let rom_size = match rom[0x148] {
-        id @ 0x0..=0x8 => 1 << (id + 15),
-        id => panic!("Unknown ROM size ID: {id:x}"),
-    };
-    let ram_size = match rom[0x149] {
-        0x00 => 0,
-        0x02 => 0x2000,
-        0x03 => 0x8000,
-        0x04 => 0x20000,
-        0x05 => 0x10000,
-        id => panic!("Unknown RAM size ID: {id:x}"),
-    };
-    (cart_type, rom_size, ram_size)
-}
-
 pub struct Cart<M = AnyMbc> {
     mem: Mem,
     mbc: M,
@@ -79,9 +63,33 @@ impl<M: Mbc> Cart<M> {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum RomParseError {
+    #[error("Unknown cartrige type: {0:#x}")]
+    UnknownCartType(u8),
+    #[error("Unknown ROM size ID: {0:#x}")]
+    UnknownRomSize(u8),
+    #[error("Unknown RAM size ID: {0:#x}")]
+    UnknownRamSize(u8),
+    #[error("Provided ROM is too large")]
+    LargeRom,
+}
+
 impl Cart {
-    pub fn from_rom(mut rom: Box<[u8]>) -> Self {
-        let (cart_type, rom_size, mut ram_size) = header(&rom[..]);
+    pub fn from_rom(mut rom: Box<[u8]>) -> Result<Self, RomParseError> {
+        let cart_type = rom[0x147];
+        let rom_size = match rom[0x148] {
+            id @ 0x0..=0x8 => 1 << (id + 15),
+            id => return Err(RomParseError::UnknownRomSize(id)),
+        };
+        let mut ram_size = match rom[0x149] {
+            0x00 => 0,
+            0x02 => 0x2000,
+            0x03 => 0x8000,
+            0x04 => 0x20000,
+            0x05 => 0x10000,
+            id => return Err(RomParseError::UnknownRamSize(id)),
+        };
 
         let mbc = match cart_type {
             0x00 | 0x08 | 0x09 => AnyMbc::Simple(Default::default()),
@@ -92,7 +100,7 @@ impl Cart {
             }
             0x0f | 0x10 => AnyMbc::Mbc3(Mbc3::new_with_rtc()),
             0x11..=0x13 => AnyMbc::Mbc3(Default::default()),
-            _ => panic!("Unknown cartrige type: {cart_type:x}"),
+            _ => return Err(RomParseError::UnknownCartType(cart_type)),
         };
 
         let battery_backed = matches!(
@@ -100,7 +108,9 @@ impl Cart {
             0x03 | 0x06 | 0x09 | 0x0d | 0x0f | 0x10 | 0x13 | 0x1b | 0x1e | 0x22 | 0xff
         );
 
-        assert!(rom_size >= rom.len(), "ROM is too big");
+        if rom_size < rom.len() {
+            return Err(RomParseError::LargeRom);
+        }
         if rom_size > rom.len() {
             let mut vec = Vec::from(rom);
             vec.resize(rom_size, 0);
@@ -110,11 +120,11 @@ impl Cart {
 
         let ram = OptionalSegment::new(ram_size);
 
-        Self {
+        Ok(Self {
             mem: Mem { rom, ram },
             mbc,
             battery_backed,
-        }
+        })
     }
 
     pub fn load_from_save(&mut self, save: CartSave) {

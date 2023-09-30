@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 
 pub use iron_boy_core::system::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -33,7 +33,7 @@ impl Cgb {
             .ok_or(anyhow!("No ROM file"))?;
         let rom = fs::read(rom_file_name)?;
 
-        let mut cart = Cart::from_rom(rom.into_boxed_slice());
+        let mut cart = Cart::from_rom(rom.into_boxed_slice()).context("Failed to parse ROM")?;
         if cart.battery_backed() {
             let save_path = rom_file_name.with_extension("cart");
             if save_path.exists() {
@@ -48,11 +48,11 @@ impl Cgb {
         })
     }
 
-    pub fn new_from_rom(rom: Box<[u8]>) -> Self {
-        let cart = Cart::from_rom(rom);
-        Self {
+    pub fn new_from_rom(rom: Box<[u8]>) -> Result<Self> {
+        let cart = Cart::from_rom(rom).context("Failed to parse ROM")?;
+        Ok(Self {
             system: Box::new(CgbSystem::new(cart)),
-        }
+        })
     }
 
     pub fn compute_next_frame(&mut self, pixels: &mut Pixels, audio: &mut Audio) -> Duration {
