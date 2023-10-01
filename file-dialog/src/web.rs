@@ -162,12 +162,11 @@ impl FileDialog {
         let document = window.document().ok_or(NewDialogError::Dom)?;
         let body = document.body().ok_or(NewDialogError::Dom)?;
 
-        if !STYLESHEET_INJECTED.load(Ordering::Acquire) {
+        if !STYLESHEET_INJECTED.swap(true, Ordering::Relaxed) {
             let head = document.head().ok_or(NewDialogError::Dom)?;
             let style = document.create_element("style").map_err(JsError::from)?;
             style.set_inner_html(DEFAULT_STYLE_CSS);
             head.append_child(&style).map_err(JsError::from)?;
-            STYLESHEET_INJECTED.store(true, Ordering::Release);
         }
 
         Ok(Self::new_on_element(document, body)?)
