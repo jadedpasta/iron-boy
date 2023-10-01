@@ -2,7 +2,7 @@
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
 use anyhow::{Context as _, Error, Result};
-use egui::{Context, Id, Window};
+use egui::{Context, Frame, Grid, Id, InnerResponse, Margin, SidePanel, TopBottomPanel, Window};
 use file_dialog::FileDialog;
 use winit::event_loop::EventLoopProxy;
 
@@ -14,7 +14,7 @@ struct ErrorWindow {
 }
 
 pub struct Ui {
-    window_open: bool,
+    panel_open: bool,
     file_dialog: FileDialog,
     errors: Vec<ErrorWindow>,
 }
@@ -22,7 +22,7 @@ pub struct Ui {
 impl Ui {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            window_open: true,
+            panel_open: true,
             file_dialog: FileDialog::new().context("Failed to initalize file dialog")?,
             errors: Vec::new(),
         })
@@ -59,17 +59,71 @@ impl Ui {
 
     pub fn update(&mut self, ctx: &Context, proxy: &EventLoopProxy<FrontendEvent>) -> Result<()> {
         let mut result = Ok(());
-        Window::new("Hello egui!")
-            .open(&mut self.window_open)
-            .show(ctx, |ui| {
-                ui.label("This is a test program for egui.");
+        if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+            if pos.x < ctx.screen_rect().width() * 0.05 {
+                self.panel_open = true;
+            }
+        }
+        let resp = SidePanel::left("options panel")
+            .min_width(0.0)
+            .frame(Frame::side_top_panel(&ctx.style()).inner_margin(Margin::same(10.0)))
+            .show_animated(ctx, self.panel_open, |ui| {
+                ui.heading("Iron Boy");
+                ui.separator();
                 if ui.button("Load ROM").clicked() {
                     result = self
                         .file_dialog
                         .open()
                         .context("Failed to open file dialog");
                 }
+
+                TopBottomPanel::bottom("controls panel")
+                    .frame(Frame::none())
+                    .show_separator_line(false)
+                    .resizable(false)
+                    .show_inside(ui, |ui| {
+                        ui.heading("Controls");
+                        ui.separator();
+                        Grid::new("controls table")
+                            .striped(true)
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.monospace("WASD");
+                                ui.horizontal(|ui| {
+                                    ui.label("Joy Pad");
+                                    ui.add_space(ui.available_width()); // Force stripes to take up
+                                                                        // the whole width
+                                });
+                                ui.end_row();
+                                ui.monospace("<");
+                                ui.label("A");
+                                ui.end_row();
+                                ui.monospace(">");
+                                ui.label("B");
+                                ui.end_row();
+                                ui.monospace("[");
+                                ui.label("Start");
+                                ui.end_row();
+                                ui.monospace("]");
+                                ui.label("Select");
+                            });
+                    });
             });
+
+        if let (Some(InnerResponse { response, .. }), Some(pos)) = (
+            resp,
+            ctx.input(|i| {
+                if i.pointer.any_click() {
+                    i.pointer.interact_pos()
+                } else {
+                    None
+                }
+            }),
+        ) {
+            if !response.rect.contains(pos) {
+                self.panel_open = false;
+            }
+        }
 
         self.file_dialog.show(ctx);
 
