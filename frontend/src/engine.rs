@@ -11,7 +11,7 @@ use winit::{
     dpi::LogicalSize,
     event::{Event, KeyboardInput, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopProxy},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 use crate::{
@@ -76,7 +76,7 @@ mod wasm {
 #[cfg(target_arch = "wasm32")]
 use wasm::EngineWindow;
 #[cfg(not(target_arch = "wasm32"))]
-type EngineWindow = Window;
+type EngineWindow = winit::window::Window;
 
 pub struct Engine {
     proxy: EventLoopProxy<FrontendEvent>,
