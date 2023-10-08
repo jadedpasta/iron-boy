@@ -36,9 +36,10 @@ impl From<DomException> for JsError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileHandle {
     file: File,
+    name: Box<str>,
     progress: Rc<Cell<f64>>,
 }
 
@@ -47,6 +48,7 @@ pub type ReadError = JsError;
 impl FileHandle {
     fn new(file: File) -> Self {
         Self {
+            name: file.name().into_boxed_str(),
             file,
             progress: Rc::new(Cell::new(0.0)),
         }
@@ -54,6 +56,10 @@ impl FileHandle {
 
     pub fn progress(&self) -> f64 {
         self.progress.get()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub async fn read(&self) -> Result<Box<[u8]>, ReadError> {

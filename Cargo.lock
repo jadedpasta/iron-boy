@@ -890,6 +890,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-osstr"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "egui-wgpu"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1365,6 +1372,7 @@ dependencies = [
  "crossbeam-queue",
  "dasp",
  "egui",
+ "egui-osstr",
  "egui-wgpu",
  "egui-winit",
  "env_logger",

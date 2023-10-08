@@ -4,7 +4,7 @@
 use std::{
     convert::Infallible,
     io::{self, SeekFrom},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use egui::Context;
@@ -41,6 +41,22 @@ impl FileHandle {
             // TODO: progress
         }
         Ok(buf.into_boxed_slice())
+    }
+
+    pub fn name(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl From<Box<Path>> for FileHandle {
+    fn from(path: Box<Path>) -> Self {
+        Self { path }
+    }
+}
+
+impl From<PathBuf> for FileHandle {
+    fn from(path: PathBuf) -> Self {
+        path.into_boxed_path().into()
     }
 }
 

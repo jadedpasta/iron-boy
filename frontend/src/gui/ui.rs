@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2023 Robert Hrusecky <jadedpastabowl@gmail.com>
 
-use anyhow::{Context as _, Error, Result};
+use anyhow::{Error, Result};
 use egui::{Context, Frame, Grid, Id, InnerResponse, Margin, SidePanel, TopBottomPanel, Window};
-use file_dialog::FileDialog;
 use winit::event_loop::EventLoopProxy;
 
-use crate::{background, event::FrontendEvent};
+use crate::event::FrontendEvent;
+
+use super::chooser::RomChooser;
 
 struct ErrorWindow {
     open: bool,
@@ -15,7 +16,7 @@ struct ErrorWindow {
 
 pub struct Ui {
     panel_open: bool,
-    file_dialog: FileDialog,
+    rom_chooser: RomChooser,
     errors: Vec<ErrorWindow>,
 }
 
@@ -23,7 +24,7 @@ impl Ui {
     pub fn new() -> Result<Self> {
         Ok(Self {
             panel_open: true,
-            file_dialog: FileDialog::new().context("Failed to initalize file dialog")?,
+            rom_chooser: RomChooser::new()?,
             errors: Vec::new(),
         })
     }
@@ -65,17 +66,12 @@ impl Ui {
             }
         }
         let resp = SidePanel::left("options panel")
-            .min_width(0.0)
             .frame(Frame::side_top_panel(&ctx.style()).inner_margin(Margin::same(10.0)))
             .show_animated(ctx, self.panel_open, |ui| {
                 ui.heading("Iron Boy");
                 ui.separator();
-                if ui.button("Load ROM").clicked() {
-                    result = self
-                        .file_dialog
-                        .open()
-                        .context("Failed to open file dialog");
-                }
+
+                result = self.rom_chooser.show(ui, proxy);
 
                 TopBottomPanel::bottom("controls panel")
                     .frame(Frame::none())
@@ -91,8 +87,8 @@ impl Ui {
                                 ui.monospace("WASD");
                                 ui.horizontal(|ui| {
                                     ui.label("Joy Pad");
-                                    ui.add_space(ui.available_width()); // Force stripes to take up
-                                                                        // the whole width
+                                    // Force stripes to take up the whole width
+                                    ui.add_space(ui.available_width());
                                 });
                                 ui.end_row();
                                 ui.monospace("<");
@@ -125,18 +121,7 @@ impl Ui {
             }
         }
 
-        self.file_dialog.show(ctx);
-
-        if let Some(file) = self.file_dialog.file() {
-            let proxy = proxy.clone();
-            background::spawn(async move {
-                let event = match file.read().await.context("Failed to read ROM file") {
-                    Ok(data) => FrontendEvent::NewRom(data),
-                    Err(error) => FrontendEvent::Error(error),
-                };
-                let _ = proxy.send_event(event);
-            });
-        }
+        self.rom_chooser.show_dialog(ctx, proxy);
 
         self.show_errors(ctx);
 

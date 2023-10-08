@@ -4,9 +4,12 @@ members = [
     "core",
     "frontend",
     "run-wasm",
-    "file-dialog"
+    "file-dialog",
+    "egui-osstr",
 ]
 default-members = [
     "core",
     "frontend",
+    "file-dialog",
+    "egui-osstr",
 ]
